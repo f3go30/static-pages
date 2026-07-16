@@ -31,12 +31,12 @@
   .checkin-btn { flex: 1; padding: 16px 8px; border-radius: 10px; border: 2px solid #d8cfbf; background: #fff; font-family: inherit; font-size: 17px; font-weight: bold; cursor: pointer; text-align: center; }
   .checkin-btn.yes { color: #2f5d50; }
   .checkin-btn.yes:hover { border-color: #2f5d50; background: #eef3f0; }
-  .checkin-btn.no { color: #a3401a; }
-  .checkin-btn.no:hover { border-color: #a3401a; background: #fdeceb; }
+  .checkin-btn.no { color: #f7b209; }
+  .checkin-btn.no:hover { border-color: #f7b209; background: #fdf3d9; }
   .checkin-btn.none { color: #8a8272; }
   .checkin-btn.none:hover { border-color: #b0a898; background: #f5f2ea; }
   .checkin-btn.current.yes { background: #eef3f0; border-color: #2f5d50; }
-  .checkin-btn.current.no { background: #fdeceb; border-color: #a3401a; }
+  .checkin-btn.current.no { background: #fdf3d9; border-color: #f7b209; }
   .checkin-btn.current.none { background: #f5f2ea; border-color: #b0a898; }
   .checkin-btn.fail { color: #b8390f; }
   .checkin-btn.fail:hover { border-color: #b8390f; background: #fbe4db; }
@@ -293,7 +293,7 @@
           <div class="legend" style="margin-top:8px;justify-content:center;">
             <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
             <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>None</div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
           </div>
         </div>
         <div class="stat-card">
@@ -423,7 +423,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.3.17.1";
+  var STATIC_BUILD_VERSION_ = "2.3.19.1";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
