@@ -422,7 +422,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.3.16.4";
+  var STATIC_BUILD_VERSION_ = "2.3.16.5";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -577,8 +577,14 @@
   }
 
   function updateHeaderIdentity_(f3Name, team, monthLabel) {
-    $('headerName').textContent = (NAME_SPACE || '') + ': ' + f3Name;
+    var title = (NAME_SPACE || '') + (f3Name ? ': ' + f3Name : '');
+    $('headerName').textContent = title;
     $('headerSub').textContent = team || '';
+    // No HtmlService sandbox iframe on this static page (unlike CheckinApp.html, see
+    // buildCheckinPageOutput_'s docstring, dashboardWebapp.js) — this document IS the
+    // top-level document, so a client-side document.title write reaches the browser tab
+    // directly instead of needing to be baked in server-side.
+    if (title) document.title = title;
   }
 
   /** Applies the site-config values from an identify response's `config` field — the static
