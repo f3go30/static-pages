@@ -512,7 +512,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.0.3";
+  var STATIC_BUILD_VERSION_ = "2.4.0.4";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1362,6 +1362,40 @@
     return v === 1 ? 'done' : v === 0 ? 'missed' : v === -1 ? 'absent' : 'pending';
   }
 
+  function countOutcomesLocal_(dayValues) {
+    var done = 0, missed = 0, absent = 0;
+    (dayValues || []).forEach(function(v) {
+      if (v === 1) done++; else if (v === 0) missed++; else if (v === -1) absent++;
+    });
+    return { done: done, missed: missed, absent: absent };
+  }
+
+  function firstActiveDayIndexLocal_(dayValues) {
+    for (var i = 0; i < (dayValues || []).length; i++) {
+      if (dayValues[i] === 1 || dayValues[i] === 0) return i;
+    }
+    return -1;
+  }
+
+  function sumBonusPillsLocal_(pills) {
+    var sum = 0;
+    Object.keys(pills || {}).forEach(function(k) { sum += pills[k] || 0; });
+    return sum;
+  }
+
+  function computeScoreForDayLocal_(dayValues, bonusPills) {
+    var raw = (dayValues || []).reduce(function(acc, v) {
+      return acc + (v === 1 ? 1 : v === -1 ? -1 : 0);
+    }, 0);
+    return raw + sumBonusPillsLocal_(bonusPills);
+  }
+
+  function computeScorePctLocal_(score, dayValues) {
+    var firstActiveIdx = firstActiveDayIndexLocal_(dayValues);
+    var denom = firstActiveIdx === -1 ? 0 : ((dayValues || []).length - firstActiveIdx);
+    return denom ? Math.round((score / denom) * 100) : (score >= 0 ? 100 : 0);
+  }
+
   function buildRollingAverageLocal_(values, windowSize) {
     var series = [];
     for (var i = 0; i < values.length; i++) {
@@ -1396,14 +1430,16 @@
 
   function memberViewForIndex_(member, dayIndex, totalDays) {
     var sliced = (member.dayValues || []).slice(0, dayIndex + 1);
+    var bonusForDay = (member.bonusByTypeSeries && member.bonusByTypeSeries[dayIndex]) || member.bonusByType;
+    var score = computeScoreForDayLocal_(sliced, bonusForDay);
     return {
       name: member.name,
       team: member.team,
-      score: member.score,
-      scorePct: member.scorePct,
+      score: score,
+      scorePct: computeScorePctLocal_(score, sliced),
       streak: computeStreakLocal_(sliced),
       daySegments: buildDaySegmentsLocal_(sliced, totalDays),
-      bonusByType: (member.bonusByTypeSeries && member.bonusByTypeSeries[dayIndex]) || member.bonusByType,
+      bonusByType: bonusForDay,
     };
   }
 
@@ -1444,17 +1480,20 @@
     $('dStreak').textContent = streaks.current;
     $('dStreakBest30').textContent = streaks.best;
 
+    var dBonusesForDay = (d.bonusByTypeSeries && d.bonusByTypeSeries[dayIndex]) || d.bonusByType;
+    var dayScore = computeScoreForDayLocal_(selfValues, dBonusesForDay);
+    var dayScorePct = computeScorePctLocal_(dayScore, selfValues);
+    var dayOutcomes = countOutcomesLocal_(selfValues);
+
     $('dMonthRing').innerHTML = buildRingSvg_(
-      daySegments, 140, d.scorePct + '%', (d.score >= 0 ? '+' : '') + d.score + ' pts', scoreColor_(d.scorePct)
+      daySegments, 140, dayScorePct + '%', (dayScore >= 0 ? '+' : '') + dayScore + ' pts', scoreColor_(dayScorePct)
     );
 
-    $('dScore').textContent = (d.score >= 0 ? '+' : '') + d.score;
-    $('dScore').style.color = scoreColor_(d.scorePct);
-    $('dScoreSub').innerHTML = d.done + ' hits<br>' + d.missed + ' misses<br>' + d.absent + ' no check-in';
+    $('dScore').textContent = (dayScore >= 0 ? '+' : '') + dayScore;
+    $('dScore').style.color = scoreColor_(dayScorePct);
+    $('dScoreSub').innerHTML = dayOutcomes.done + ' hits<br>' + dayOutcomes.missed + ' misses<br>' + dayOutcomes.absent + ' fails';
 
     $('dAvgChart').innerHTML = buildAvgChartSvg_(avgRollingAverage, avgDaySegments, avgWindowCount);
-
-    var dBonusesForDay = (d.bonusByTypeSeries && d.bonusByTypeSeries[dayIndex]) || d.bonusByType;
     var bonusesEl = $('dBonuses');
     bonusesEl.innerHTML = '';
     BONUS_GRID_ORDER_.forEach(function(code) {
