@@ -516,7 +516,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.17";
+  var STATIC_BUILD_VERSION_ = "2.4.1.18";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1031,11 +1031,11 @@
     hideApiError_();
     setButtonLoading_(btn, true, 'Saving…');
     var dateIso = day === 'today' ? state.todayIso : state.yesterdayIso;
+    var status = valueToCheckinStatus_(value);
     applyOwnDayWrite_(dateIso, value);
+    state.locallyWrittenIso[dateIso] = status;
     callApi('checkin', { f3Name: state.f3Name, email: state.email, day: day, value: value, resolvedContext: state.resolvedContext })
       .then(function() {
-        var status = valueToCheckinStatus_(value);
-        state.locallyWrittenIso[dateIso] = status;
         renderCheckinStatus_(day, status);
         state.lastEditedDayIso = dateIso;
         if (day === 'today') state.todayStatus = status; else state.yesterdayStatus = status;
@@ -1047,6 +1047,7 @@
       })
       .catch(function(err) {
         revertOwnDayWrite_(dateIso);
+        delete state.locallyWrittenIso[dateIso];
         showApiError_('checkin', err);
       })
       .finally(function() {
@@ -1233,11 +1234,11 @@
     hideApiError_();
     setButtonLoading_(btn, true, 'Saving…');
     var dateIso = state.selectedDateIso;
+    var status = valueToMonthGridStatus_(value);
     applyOwnDayWrite_(dateIso, value);
+    state.locallyWrittenIso[dateIso] = status;
     callApi('checkin', { f3Name: state.f3Name, email: state.email, day: dateIso, value: value, resolvedContext: state.resolvedContext })
       .then(function() {
-        var status = valueToMonthGridStatus_(value);
-        state.locallyWrittenIso[dateIso] = status;
         updateMonthGridEntry_(dateIso, status);
         updateCalCellStatus_(dateIso, status);
         renderSelectionPanel_(dateIso);
@@ -1245,7 +1246,7 @@
         if (dateIso === state.todayIso) { state.todayStatus = status; renderCheckinStatus_('today', status); }
         else if (dateIso === state.yesterdayIso) { state.yesterdayStatus = status; renderCheckinStatus_('yesterday', status); }
       })
-      .catch(function(err) { revertOwnDayWrite_(dateIso); showApiError_('checkin', err); })
+      .catch(function(err) { revertOwnDayWrite_(dateIso); delete state.locallyWrittenIso[dateIso]; showApiError_('checkin', err); })
       .finally(function() { setButtonLoading_(btn, false); });
   }
 
