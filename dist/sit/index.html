@@ -516,7 +516,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.18";
+  var STATIC_BUILD_VERSION_ = "2.4.2.1";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -584,12 +584,24 @@
     try { localStorage.removeItem(CHECKIN_SNAPSHOT_KEY_); } catch (e) { /* not fatal */ }
   }
 
+  // F3Go30-5nfj.5: reference-counted, not a boolean — more than one request can be in flight at
+  // once (e.g. the PAX clicking multiple checkin buttons before earlier ones settle), so the
+  // indicator must stay visible until the LAST outstanding request settles, not just the first.
+  var pendingRequestCount_ = 0;
+
+  function updateSyncingIndicator_() {
+    var el = $('checkinSyncingNote');
+    if (el) el.classList.toggle('hidden', pendingRequestCount_ <= 0);
+  }
+
   function callApi(action, payload) {
     var body = Object.assign({}, payload, {
       action: action,
       ns: (typeof NS_ !== 'undefined' ? NS_ : ''),
       contextDate: (typeof CONTEXT_DATE_ !== 'undefined' ? CONTEXT_DATE_ : '')
     });
+    pendingRequestCount_++;
+    updateSyncingIndicator_();
     return fetch(WEBAPP_URL + '?cmd=' + CMD_, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -600,6 +612,9 @@
     }).then(function(json) {
       if (!json.ok) throw new Error(json.error || 'Server reported an error with no detail');
       return json;
+    }).finally(function() {
+      pendingRequestCount_--;
+      updateSyncingIndicator_();
     });
   }
 
@@ -928,7 +943,6 @@
       paintedFromSnapshot_ = true;
       if (checkinSnapshot_.config) applyServerConfig_(checkinSnapshot_.config);
       applyIdentifySuccess_(Object.assign({}, checkinSnapshot_, { firstUse: false, emailMismatch: false }));
-      $('checkinSyncingNote').classList.remove('hidden');
     } else {
       $('step-identify').classList.add('hidden');
       $('step-tokenLoading').classList.remove('hidden');
@@ -971,7 +985,6 @@
       })
       .finally(function() {
         $('step-tokenLoading').classList.add('hidden');
-        $('checkinSyncingNote').classList.add('hidden');
       });
   }
   }
