@@ -267,6 +267,10 @@
       <div class="header-sub" id="headerSub"></div>
     </div>
     <div class="header-right">
+      <!-- F3Go30-5nfj.5: lives in the persistent header (never hidden by showStep()) so it
+           stays visible even if the PAX navigates to another step while the background
+           identify call is still in flight. -->
+      <span id="checkinSyncingNote" class="hidden" style="font-size:13px;color:var(--brand-contrast);opacity:.75;">⟳ Syncing…</span>
       <button id="bonusBtn" class="more-btn hidden" title="Manage Bonus Points">&#127942;</button>
       <button id="moreBtn" class="more-btn hidden" title="Open tracker spreadsheet">&#128202;</button>
     </div>
@@ -318,11 +322,6 @@
       </div>
       <p class="muted" id="checkinSub"></p>
       <div id="emailMismatchNote" class="warning-text hidden"></div>
-
-      <!-- F3Go30-5nfj.5: shown while a page painted instantly from a cached localStorage
-           snapshot (go30CheckinSnapshot:v1) is still waiting on the real identify round trip —
-           a non-blocking indicator instead of the blocking "Signing you in..." spinner. -->
-      <div id="checkinSyncingNote" class="hidden" style="font-size:13px;color:var(--text-faint);margin:-2px 0 8px;">⟳ Syncing…</div>
 
       <div id="bookmarkHereNote" class="hidden warning-text">
         This is your personal check-in page — use your browser's Share or menu button to
@@ -517,7 +516,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.16";
+  var STATIC_BUILD_VERSION_ = "2.4.1.17";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
