@@ -517,7 +517,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.14";
+  var STATIC_BUILD_VERSION_ = "2.4.1.15";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -941,6 +941,11 @@
           clearCheckinSnapshot_();
           saveIdentityToStorage_(res.f3Name, res.email);
           var signupCurrentMonthUrl = signupDeepLinkUrl_('current');
+          // showStep('identify') here isn't about showing identify — it's the only way to hide
+          // whatever step is currently up (possibly #step-checkin, if a snapshot got painted)
+          // since showStep only knows about the identify/checkin/dashboard/bonus set. The next
+          // line then swaps identify back out for tokenLoading, matching this branch's pre-F3Go30-
+          // 5nfj.5 behavior of showing the loading spinner during the redirect attempt below.
           showStep('identify');
           $('step-identify').classList.add('hidden');
           $('step-tokenLoading').classList.remove('hidden');
