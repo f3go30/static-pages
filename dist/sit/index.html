@@ -517,7 +517,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.15";
+  var STATIC_BUILD_VERSION_ = "2.4.1.16";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -813,8 +813,10 @@
     }
     $('idSignupBtn').classList.add('hidden');
     saveIdentityToStorage_(res.f3Name, res.email);
-    state.monthCache = {};
-    state.viewDate = null;
+    if (!opts.preserveView) {
+      state.monthCache = {};
+      state.viewDate = null;
+    }
     updateHeaderIdentity_(res.f3Name, res.team, res.monthLabel);
     $('checkinHeading').textContent = (res.firstUse ? 'Welcome, ' : 'Welcome back, ') + res.f3Name + '!';
     $('checkinSub').textContent = res.monthLabel + ' — How did you do on your commitment for today?';
@@ -850,8 +852,10 @@
     $('nextMonthNoteText').textContent = "You're not signed up for " + res.nextMonthLabel + ' yet — verify or update your goals before the month starts.';
     $('nextMonthNote').classList.toggle('hidden', res.nextMonthRegistered !== false);
     $('bookmarkHereNote').classList.toggle('hidden', !res.firstUse);
-    showStep('checkin');
-    prefetchDashboard_();
+    if (!opts.preserveView) {
+      showStep('checkin');
+      prefetchDashboard_();
+    }
   }
 
   /** Applies a resolved typed-identify result (matched / knownPaxNotRegistered / miss) — this
