@@ -517,7 +517,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.12";
+  var STATIC_BUILD_VERSION_ = "2.4.1.13";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -891,6 +891,16 @@
       });
   });
 
+  // F3Go30-5nfj.5: called at the very bottom of this script block (see the runIdentityBootstrap_()
+  // call at the end of the file), not inline here — applyIdentifySuccess_/applyServerConfig_/
+  // renderCheckinStatus_ all reach top-level `var` config/lookup tables (BONUS_GRID_ORDER_KEYS_,
+  // CHECKIN_STATUS_TEXT_, etc.) that are declared further down this same script block. Those are
+  // `var`s hoisted-but-unassigned until their own declaration line actually executes, so running
+  // this bootstrap inline (at its original position, ahead of those declarations) intermittently
+  // threw on the snapshot-instant-paint path, which — unlike the old blocking-spinner path — calls
+  // applyIdentifySuccess_ synchronously during initial script execution instead of later from an
+  // async .then() (by which point the whole script had already finished running once).
+  function runIdentityBootstrap_() {
   if (!TOKEN_IDENTIFY_RESULT && SAVED_IDENTITY_TOKEN) {
     var checkinSnapshot_ = loadCheckinSnapshot_(SAVED_IDENTITY_TOKEN);
     var paintedFromSnapshot_ = false;
@@ -941,6 +951,7 @@
         $('step-tokenLoading').classList.add('hidden');
         $('checkinSyncingNote').classList.add('hidden');
       });
+  }
   }
 
   // ── Step: checkin ──────────────────────────────────────────────────────
@@ -1951,6 +1962,10 @@
         setButtonLoading_(btn, false);
       });
   });
+
+  // F3Go30-5nfj.5: run last — see runIdentityBootstrap_'s own docstring for why this can't run
+  // at its original inline position any more.
+  runIdentityBootstrap_();
 </script>
 </body>
 </html>
