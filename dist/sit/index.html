@@ -517,7 +517,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.1.13";
+  var STATIC_BUILD_VERSION_ = "2.4.1.14";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -787,7 +787,14 @@
     }
   }
 
-  function applyIdentifySuccess_(res) {
+  /** F3Go30-5nfj.5: opts.preserveView (set true only when reconciling the live identify response
+   * that lands after an already-painted localStorage snapshot) skips the parts of this function
+   * that reset the view back to a fresh check-in landing (closing an open month calendar,
+   * clearing the day selection) — without it, a PAX who opened the calendar during the brief
+   * window before the live response landed would see it silently slammed shut out from under
+   * them the instant reconciliation completed. */
+  function applyIdentifySuccess_(res, opts) {
+    opts = opts || {};
     state.f3Name = res.f3Name;
     state.email = res.email;
     state.resolvedContext = res.resolvedContext || null;
@@ -820,17 +827,24 @@
     state.todayStatus = res.todayStatus;
     state.yesterdayStatus = res.yesterdayStatus;
     state.yesterdayAvailable = !!res.yesterdayAvailable;
-    state.selectedDateIso = null;
-    state.lastEditedDayIso = null;
     var todayD = new Date();
     state.todayIso = isoDate_(todayD);
     var yesterdayD = new Date(todayD);
     yesterdayD.setDate(yesterdayD.getDate() - 1);
     state.yesterdayIso = isoDate_(yesterdayD);
-    state.advancedOpen = false;
-    $('checkinTodayBlock').classList.remove('hidden');
-    $('advancedGrid').classList.add('hidden');
-    $('advancedToggleBtn').textContent = 'Show month calendar ▾';
+    if (!opts.preserveView) {
+      state.selectedDateIso = null;
+      state.lastEditedDayIso = null;
+      state.advancedOpen = false;
+      $('checkinTodayBlock').classList.remove('hidden');
+      $('advancedGrid').classList.add('hidden');
+      $('advancedToggleBtn').textContent = 'Show month calendar ▾';
+    } else if (state.advancedOpen) {
+      // The month calendar was already open (painted from the snapshot) when this live response
+      // landed — re-render it in place with the reconciled data instead of closing it.
+      renderCalendar_();
+      if (state.selectedDateIso) renderSelectionPanel_(state.selectedDateIso);
+    }
     $('emailMismatchNote').textContent = "Note: this email doesn't match what we have on file for " + res.f3Name + ', but we found your check-in.';
     $('emailMismatchNote').classList.toggle('hidden', !res.emailMismatch);
     $('nextMonthNoteText').textContent = "You're not signed up for " + res.nextMonthLabel + ' yet — verify or update your goals before the month starts.';
@@ -921,7 +935,7 @@
         if (res.config) applyServerConfig_(res.config);
         if (res.matched) {
           reconcileWithLocalWrites_(res);
-          applyIdentifySuccess_(res);
+          applyIdentifySuccess_(res, { preserveView: paintedFromSnapshot_ });
           saveCheckinSnapshot_(SAVED_IDENTITY_TOKEN, res);
         } else if (res.knownPaxNotRegistered) {
           clearCheckinSnapshot_();
