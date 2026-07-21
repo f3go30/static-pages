@@ -212,6 +212,12 @@
   .api-error-banner { background: var(--error-bg); border-bottom: 3px solid var(--error-border); color: var(--error-fg); padding: 12px 18px; font-size: 17px; line-height: 1.5; }
   .api-error-banner strong { display: block; margin-bottom: 2px; }
   .api-error-detail { margin-top: 6px; font-family: monospace; font-size: 15px; background: var(--input-bg); border: 1px solid var(--error-detail-border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* F3Go30-ubwl.3: reuses the shared warn-* theme vars (F3Go30-dtr2) — no banner-specific colors.
+     display lives on the -inner wrapper, not this class itself, so toggling .hidden on the outer
+     element isn't fighting an equal-specificity `display` declared on the same element/class. */
+  .gas-moved-banner { background: var(--warn-bg); border-bottom: 3px solid var(--warn-border); color: var(--warn-fg); padding: 12px 18px; font-size: 15px; line-height: 1.5; }
+  .gas-moved-banner-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .gas-moved-banner button { background: none; border: none; color: var(--warn-fg); text-decoration: underline; cursor: pointer; font-size: 14px; padding: 0; font-family: inherit; flex-shrink: 0; }
   .date-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
   .date-nav-btn { width: 44px; height: 44px; border-radius: 8px; border: 2px solid var(--brand); background: var(--card-bg); color: var(--brand); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
   .date-nav-btn svg { width: 20px; height: 20px; display: block; }
@@ -304,6 +310,16 @@
     <span>Please try again, or refresh the browser and try again. If the problem persists,
       notify <span id="apiErrorSiteQName">your Site Q</span><a id="apiErrorContactLink" class="hidden" href="#">(email)</a>.</span>
     <div id="apiErrorDetail" class="api-error-detail"></div>
+  </div>
+
+  <!-- F3Go30-ubwl.3: shown on arrival from a GAS redirect (?from=gas — F3Go30-ubwl §Marker
+       param, script/Utilities.js buildStaticRedirectUrl_). Page-level, above .wrap, so it never
+       blocks or delays the check-in grid rendered beneath it. -->
+  <div id="gasMovedBanner" class="gas-moved-banner hidden">
+    <div class="gas-moved-banner-inner">
+      <span>This link has moved — please update your bookmark to the address now shown in your browser's address bar.</span>
+      <button id="gasMovedDismissBtn" type="button">Got it</button>
+    </div>
   </div>
 
   <div class="wrap">
@@ -490,16 +506,27 @@
       </div>
 
       <div id="advancedGrid" class="hidden">
-        <div class="checkin-section-label">STATUS FOR</div>
-        <div class="checkin-selected-date" id="checkinSelectedDate"></div>
-        <div class="checkin-status" id="checkinStatusNote"></div>
-        <div class="checkin-row">
-          <button class="checkin-btn yes" id="selYesBtn">&#10003; Hit it</button>
-          <button class="checkin-btn no" id="selNoBtn">&#10007; Missed it</button>
-          <button class="checkin-btn none" id="selNoneBtn">No check-in</button>
-          <button class="checkin-btn fail" id="selFailBtn">&#10008; Failed</button>
+        <div class="date-nav" id="calMonthNav">
+          <button id="calPrevMonthBtn" class="date-nav-btn" title="Previous month"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="date-nav-label" id="calMonthNavLabel">&nbsp;</div>
+          <button id="calNextMonthBtn" class="date-nav-btn" title="Next month"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
-        <div class="cal-grid" id="calGrid"></div>
+        <div id="calEditableArea">
+          <div class="checkin-section-label">STATUS FOR</div>
+          <div class="checkin-selected-date" id="checkinSelectedDate"></div>
+          <div class="checkin-status" id="checkinStatusNote"></div>
+          <div class="checkin-row">
+            <button class="checkin-btn yes" id="selYesBtn">&#10003; Hit it</button>
+            <button class="checkin-btn no" id="selNoBtn">&#10007; Missed it</button>
+            <button class="checkin-btn none" id="selNoneBtn">No check-in</button>
+            <button class="checkin-btn fail" id="selFailBtn">&#10008; Failed</button>
+          </div>
+          <div class="cal-grid" id="calGrid"></div>
+        </div>
+        <div id="calSignupPrompt" class="warning-text hidden">
+          <span id="calSignupPromptText"></span>
+          <button class="secondary" id="calSignupPromptBtn" style="margin-top:8px;padding:8px;">Sign up for this month &rarr;</button>
+        </div>
       </div>
 
       <div id="nextMonthNote" class="warning-text hidden">
@@ -664,6 +691,9 @@
   var NS_ = STATIC_PARAMS_.get('ns') || '';
   var CONTEXT_DATE_ = STATIC_PARAMS_.get('contextDate') || '';
   var STATIC_TOKEN_ = STATIC_PARAMS_.get('id') || '';
+  // F3Go30-ubwl.3: set by every GAS-side redirect into this page (buildStaticRedirectUrl_,
+  // script/Utilities.js) — never set by a link this page itself produces.
+  var FROM_GAS_ = STATIC_PARAMS_.get('from') === 'gas';
   // A fresh guid for a typed-identify (name+email) submission on this page — mirrors GAS's
   // renderCheckinPage_ formGuid, which binds a CheckinSessions row on first successful match.
   // No server-render step here to bake one in, so it's minted client-side instead.
@@ -672,7 +702,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.3.2";
+  var STATIC_BUILD_VERSION_ = "2.4.3.4";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -885,6 +915,15 @@
     advancedOpen: false,
     selectedDateIso: null,
     lastEditedDayIso: null,
+    // Month-to-month navigation (F3Go30-k5fn.2): every TrackerDB month + which of them this PAX
+    // is registered for (seeded from identify's availableMonths/registeredMonthKeys,
+    // F3Go30-k5fn.1), which monthKey the advanced calendar is currently showing, and a
+    // monthKey -> monthGrid-response cache so paging back to an already-visited month is free.
+    availableMonths: [],
+    registeredMonthKeys: [],
+    calMonthKey: null,
+    calGridCache: {},
+    calLoading: false,
     // F3Go30-833s.9: true once an identify has actually painted the check-in step this
     // pageview. The signup step reads it to decide whether there is a check-in to offer a way
     // back to — notably false on the month-boundary path, where identity resolves but the
@@ -898,6 +937,29 @@
   // with the live GAS-reported version once the first identify response's `config.appVersion`
   // lands (applyServerConfig_ below overwrites this with the authoritative value).
   if (STATIC_BUILD_VERSION_) $('versionFooter').textContent = 'v' + STATIC_BUILD_VERSION_ + ' (build)';
+
+  // F3Go30-ubwl.3: "this link moved" advisory for arrivals via a GAS redirect. Independent of
+  // showStep()/the identify bootstrap below — runs once, immediately, regardless of which step
+  // ends up shown, so it never gates or delays the rest of page init.
+  var GAS_MOVED_DISMISSED_KEY_ = 'go30GasMovedDismissed';
+  function isGasMovedDismissed_() {
+    try { return localStorage.getItem(GAS_MOVED_DISMISSED_KEY_) === '1'; } catch (e) { return false; }
+  }
+  $('gasMovedDismissBtn').addEventListener('click', function() {
+    $('gasMovedBanner').classList.add('hidden');
+    try { localStorage.setItem(GAS_MOVED_DISMISSED_KEY_, '1'); } catch (e) { /* not fatal */ }
+  });
+  if (FROM_GAS_ && !isGasMovedDismissed_()) {
+    $('gasMovedBanner').classList.remove('hidden');
+    // Strip the marker once the advisory has rendered — otherwise a PAX who bookmarks straight
+    // from the address bar carries `from=gas` forward and gets nagged forever on a URL that
+    // never moved. replaceState (not pushState/reload) keeps this invisible to the back button.
+    try {
+      var gasMovedUrl_ = new URL(location.href);
+      gasMovedUrl_.searchParams.delete('from');
+      history.replaceState(null, '', gasMovedUrl_);
+    } catch (e) { /* not fatal — worst case the marker just lingers in the address bar */ }
+  }
 
   function showStep(name) {
     ['identify', 'checkin', 'dashboard', 'bonus', 'signup'].forEach(function(s) {
@@ -1048,6 +1110,17 @@
     var yesterdayD = new Date(todayD);
     yesterdayD.setDate(yesterdayD.getDate() - 1);
     state.yesterdayIso = isoDate_(yesterdayD);
+    // Month-to-month navigation (F3Go30-k5fn.2): always take the freshest available/registered
+    // lists from the server, but only reset which month the calendar is parked on (and its cache)
+    // on a genuine fresh identify — not on a preserveView reconciliation, which must not yank a
+    // PAX back to their anchored month if they had already paged elsewhere.
+    state.availableMonths = res.availableMonths || [];
+    state.registeredMonthKeys = res.registeredMonthKeys || [];
+    if (!opts.preserveView || !state.calMonthKey) {
+      state.calMonthKey = (state.monthGrid[0] && state.monthGrid[0].dateIso.slice(0, 7)) || monthKeyOf_(todayD);
+      state.calGridCache = {};
+      state.calGridCache[state.calMonthKey] = { monthKey: state.calMonthKey, monthGrid: state.monthGrid, registered: true };
+    }
     if (!opts.preserveView) {
       state.selectedDateIso = null;
       state.lastEditedDayIso = null;
@@ -1060,6 +1133,7 @@
       // landed — re-render it in place with the reconciled data instead of closing it.
       renderCalendar_();
       if (state.selectedDateIso) renderSelectionPanel_(state.selectedDateIso);
+      renderCalMonthNav_();
     }
     $('emailMismatchNote').textContent = "Note: this email doesn't match what we have on file for " + res.f3Name + ', but we found your check-in.';
     $('emailMismatchNote').classList.toggle('hidden', !res.emailMismatch);
@@ -1396,6 +1470,118 @@
     grid.appendChild(frag);
   }
 
+  // ── Step: checkin — Month-to-month navigation (F3Go30-k5fn.2) ──────────
+  function calMonthIndex_(monthKey) {
+    var months = state.availableMonths || [];
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].monthKey === monthKey) return i;
+    }
+    return -1;
+  }
+
+  function calMonthLabel_(monthKey) {
+    var months = state.availableMonths || [];
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].monthKey === monthKey) return months[i].label;
+    }
+    return monthKey;
+  }
+
+  /** AC2/AC3: BACKWARD stops at the PAX's earliest registered month (arrows only ever step among
+   * months the PAX is registered in when going back); FORWARD reaches the latest EXISTING
+   * tracker month, registered or not — an unregistered forward month renders the signup gate
+   * rather than being unreachable. */
+  function renderCalMonthNav_() {
+    var months = state.availableMonths || [];
+    var idx = calMonthIndex_(state.calMonthKey);
+    $('calMonthNavLabel').textContent = state.calLoading ? 'Loading…' : calMonthLabel_(state.calMonthKey);
+    var earliestRegisteredIdx = -1;
+    for (var i = 0; i < months.length; i++) {
+      if ((state.registeredMonthKeys || []).indexOf(months[i].monthKey) !== -1) { earliestRegisteredIdx = i; break; }
+    }
+    var canGoBack = idx > 0 && earliestRegisteredIdx !== -1 && idx > earliestRegisteredIdx;
+    var canGoForward = idx > -1 && idx < months.length - 1;
+    $('calPrevMonthBtn').disabled = state.calLoading || !canGoBack;
+    $('calNextMonthBtn').disabled = state.calLoading || !canGoForward;
+  }
+
+  function applyCalGridPayload_(res) {
+    state.monthGrid = res.monthGrid || [];
+    $('calSignupPrompt').classList.add('hidden');
+    $('calEditableArea').classList.remove('hidden');
+    renderCalendar_();
+    var entries = state.monthGrid;
+    var pick = entries.some(function(e) { return e.dateIso === state.todayIso; })
+      ? state.todayIso
+      : (entries[0] && entries[0].dateIso) || null;
+    state.selectedDateIso = pick;
+    if (pick) renderSelectionPanel_(pick);
+  }
+
+  function renderCalSignupPrompt_(monthKey) {
+    state.monthGrid = [];
+    state.selectedDateIso = null;
+    $('calEditableArea').classList.add('hidden');
+    $('calGrid').innerHTML = '';
+    $('calSignupPrompt').classList.remove('hidden');
+    $('calSignupPromptText').textContent = "You're not signed up for " + calMonthLabel_(monthKey) + ' yet.';
+  }
+
+  /** Single seam for putting any month (identify's own, or a paged-to one) on screen: consults
+   * state.registeredMonthKeys for the signup-gate decision (AC5), then either serves
+   * state.calGridCache or fetches via the monthGrid action (F3Go30-k5fn.1) — never a second
+   * calendar renderer (AC9): both the registered and just-loaded paths funnel into
+   * applyCalGridPayload_, which calls the same renderCalendar_ the initial month uses. */
+  function loadCalMonth_(monthKey) {
+    state.calMonthKey = monthKey;
+    if ((state.registeredMonthKeys || []).indexOf(monthKey) === -1) {
+      renderCalSignupPrompt_(monthKey);
+      renderCalMonthNav_();
+      return Promise.resolve();
+    }
+    var cached = state.calGridCache[monthKey];
+    if (cached) {
+      applyCalGridPayload_(cached);
+      renderCalMonthNav_();
+      return Promise.resolve();
+    }
+    hideApiError_();
+    state.calLoading = true;
+    renderCalMonthNav_();
+    return callApi('monthGrid', { f3Name: state.f3Name, email: state.email, monthKey: monthKey, resolvedContext: state.resolvedContext })
+      .then(function(res) {
+        state.calGridCache[monthKey] = res;
+        if (res.registered) applyCalGridPayload_(res);
+        else renderCalSignupPrompt_(monthKey);
+      })
+      .catch(function(err) { showApiError_('monthGrid', err); })
+      .finally(function() {
+        state.calLoading = false;
+        renderCalMonthNav_();
+      });
+  }
+
+  function navigateCalMonth_(delta) {
+    if (state.calLoading) return;
+    var months = state.availableMonths || [];
+    var idx = calMonthIndex_(state.calMonthKey);
+    var newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= months.length) return;
+    loadCalMonth_(months[newIdx].monthKey);
+  }
+
+  $('calPrevMonthBtn').addEventListener('click', function() { navigateCalMonth_(-1); });
+  $('calNextMonthBtn').addEventListener('click', function() { navigateCalMonth_(1); });
+
+  // Set by calSignupPromptBtn's click just below, spent the moment a signup save completes
+  // (performSignupSave_) for exactly that gated month — AC6: the grid becomes editable in place,
+  // without a full page reload, the instant registration succeeds.
+  var calSignupGateMonthKey_ = null;
+  $('calSignupPromptBtn').addEventListener('click', function() {
+    calSignupGateMonthKey_ = state.calMonthKey;
+    openSignup_('next');
+  });
+
   function updateCalCellStatus_(dateIso, status) {
     var cell = $('calGrid').querySelector('.cal-cell[data-date="' + dateIso + '"]');
     if (!cell) return;
@@ -1492,9 +1678,14 @@
     $('advancedGrid').classList.toggle('hidden', !state.advancedOpen);
     this.textContent = state.advancedOpen ? 'Hide month calendar ▴' : 'Show month calendar ▾';
     if (state.advancedOpen) {
-      state.selectedDateIso = state.selectedDateIso || state.lastEditedDayIso || state.todayIso;
-      renderCalendar_();
-      renderSelectionPanel_(state.selectedDateIso);
+      if ((state.registeredMonthKeys || []).indexOf(state.calMonthKey) === -1) {
+        renderCalSignupPrompt_(state.calMonthKey);
+      } else {
+        state.selectedDateIso = state.selectedDateIso || state.lastEditedDayIso || state.todayIso;
+        renderCalendar_();
+        renderSelectionPanel_(state.selectedDateIso);
+      }
+      renderCalMonthNav_();
     }
   });
 
@@ -1529,8 +1720,8 @@
   // script/WebApp.js) that page already uses — no server change. What is NOT ported is the
   // identity handoff: SignupApp.html needs urlIdentityJson/localStorage to learn who the PAX
   // is because it is a different document reached by navigation, whereas here signup is a step
-  // of the document that already knows. The GAS page stays live as the availability fallback
-  // (ADR-018), so both front ends keep sharing one set of JSON handlers.
+  // of the document that already knows. The GAS page stays live to serve the legacy-link
+  // redirect route (ADR-019), so both front ends keep sharing one set of JSON handlers.
   //
   // Nothing is baked in at render time the way SignupApp.html's aoListJson/goalListJson/
   // monthsJson are: every one of those values comes back on the identify response (both the
@@ -1737,6 +1928,17 @@
       // to go back to — i.e. a next-month signup by someone not registered for this month.
       $('suDoneCheckinBtn').classList.toggle('hidden', !signupState.savedToken && !state.checkinReady);
       showSignupStep_('done');
+      // AC6 (F3Go30-k5fn.2): this save just registered the PAX for the month the calendar's
+      // forward-nav signup gate was showing — mark it registered and drop its stale
+      // registered:false cache entry so the next time this month is viewed it renders the
+      // editable grid, no page reload needed.
+      if (calSignupGateMonthKey_) {
+        var gatedMonthKey = calSignupGateMonthKey_;
+        calSignupGateMonthKey_ = null;
+        if ((state.registeredMonthKeys || []).indexOf(gatedMonthKey) === -1) state.registeredMonthKeys.push(gatedMonthKey);
+        delete state.calGridCache[gatedMonthKey];
+        if (state.calMonthKey === gatedMonthKey) loadCalMonth_(gatedMonthKey);
+      }
     }).catch(function(err) {
       showApiError_('save', err);
     }).finally(function() { setButtonLoading_(triggerBtn, false); });
