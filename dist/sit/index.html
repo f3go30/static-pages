@@ -711,7 +711,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.7.1";
+  var STATIC_BUILD_VERSION_ = "2.4.7.2";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -767,8 +767,14 @@
   // painted YESTERDAY's status under the TODAY heading whenever the snapshot was written on an
   // earlier day of the same month (the headings themselves are recomputed from the live clock in
   // applyIdentifySuccess_). The live identify usually corrects that a moment later, but the
-  // offline/flaky launch this snapshot exists to serve is exactly when it does not. monthGrid IS
-  // date-keyed, so both scalars are re-derived from it against the live date instead.
+  // offline/flaky launch this snapshot exists to serve is exactly when it does not.
+  //
+  // savedAt (already stored for the TTL check) says whether the day actually rolled:
+  //   - Same day: nothing is stale, so both scalars replay verbatim. This is the ONLY way a
+  //     cross-month yesterday survives — on the 1st the server resolves yesterday against the
+  //     PRIOR month's tracker (resolveCheckinDayTarget_, dashboardWebapp.js), which this
+  //     snapshot's single-month monthGrid can't represent.
+  //   - Day rolled: re-derive both from the date-keyed monthGrid against the live date.
   function loadCheckinSnapshot_(token) {
     try {
       var raw = localStorage.getItem(CHECKIN_SNAPSHOT_KEY_);
@@ -777,15 +783,19 @@
       if (!snap || snap.token !== token) return null;
       if (!snap.savedAt || (Date.now() - snap.savedAt) > CHECKIN_SNAPSHOT_TTL_MS_) return null;
       var todayD = new Date();
-      var todayEntry = snapshotGridEntry_(snap, isoDate_(todayD));
+      var todayIso = isoDate_(todayD);
+      var todayEntry = snapshotGridEntry_(snap, todayIso);
       if (!todayEntry) return null;
+      if (isoDate_(new Date(snap.savedAt)) === todayIso) return snap;
+
       var yesterdayD = new Date(todayD);
       yesterdayD.setDate(yesterdayD.getDate() - 1);
       var yesterdayEntry = snapshotGridEntry_(snap, isoDate_(yesterdayD));
       snap.todayStatus = todayEntry.status;
-      // On the 1st, the server resolves yesterday against the PRIOR month's tracker
-      // (resolveCheckinDayTarget_, dashboardWebapp.js) — monthGrid can't represent that, so the
-      // YESTERDAY block stays hidden until the live identify lands. Hidden beats wrong.
+      // Loading at all means the grid holds the live today, which after a roll puts the live
+      // yesterday in that same grid — so this null branch is unreachable in normal operation and
+      // stands only as a guard for a jumped device clock or a contextDate dev override.
+      // Hidden beats wrong.
       snap.yesterdayStatus = yesterdayEntry ? yesterdayEntry.status : null;
       snap.yesterdayAvailable = !!yesterdayEntry;
       return snap;
