@@ -732,7 +732,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.8.1";
+  var STATIC_BUILD_VERSION_ = "2.4.8.2";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -881,16 +881,22 @@
   // hint to the PAX that a reload is what is needed.
   // Two timeouts, because giving up early costs something very different on each side.
   //
-  // A read can be re-asked for free, so it can afford impatience: 8s is ~2x the slowest real
-  // identify observed in Axiom (identify.result durationMs tops out near 4.3s under load), and an
-  // abort at 8s followed by a retry usually has the PAX moving again inside ~10s — better than
-  // watching a dead spinner.
+  // Both numbers are calibrated against MEASURED client-side round trips, not against Axiom's
+  // server-side durationMs — the 302 hop to script.googleusercontent.com roughly doubles the
+  // server's own figure, and calibrating on the server number produces a timeout that fires on
+  // perfectly healthy requests. 12 live identify calls against SIT, no abort, 2026-07-28:
+  // min 3.3s, median 4.8s, p90 6.5s, max 9.1s, plus one that the browser itself gave up on at
+  // 29s with `Failed to fetch` (~8% loss — the failure this whole block exists for).
   //
-  // A write is never retried (see RETRYABLE_ACTIONS_), so aborting one early means telling a PAX
+  // Reads: 12s, comfortably above the 9.1s slowest healthy call, so the timeout fires on losses
+  // rather than on slowness. A read can be re-asked for free, so an unnecessary abort is cheap —
+  // but not free, since it doubles load on an endpoint already having a bad day.
+  //
+  // Writes: never retried (see RETRYABLE_ACTIONS_), so aborting one early means telling a PAX
   // their check-in or signup failed when it may well have landed server-side — the worst outcome
-  // available here. It gets a long leash instead; the timeout exists only to guarantee the promise
-  // settles at all, not to be reached in normal operation.
-  var REQUEST_TIMEOUT_MS_ = 8000;
+  // available here. Long leash; the timeout exists only to guarantee the promise settles at all,
+  // not to be reached in normal operation.
+  var REQUEST_TIMEOUT_MS_ = 12000;
   var WRITE_TIMEOUT_MS_ = 25000;
 
   // Read-only actions, safe to repeat. A retry here is invisible to the PAX and costs one extra
