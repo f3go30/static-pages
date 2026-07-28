@@ -120,6 +120,9 @@
   textarea { resize: vertical; }
   button.primary { width: 100%; padding: 14px; border: none; border-radius: 9px; background: var(--brand-bg); color: var(--brand-contrast); font-size: 18px; font-weight: bold; cursor: pointer; font-family: inherit; }
   button.secondary { width: 100%; margin-top: 10px; padding: 10px; border: none; border-radius: 9px; background: transparent; color: var(--link); font-size: 17px; cursor: pointer; font-family: inherit; }
+  /* F3Go30-1f75: the signup done card's check-in CTA is a real <a href>, not a button — it has to
+     be long-pressable, copyable and bookmarkable. Styled to read as the same primary control. */
+  a.primary { display: block; box-sizing: border-box; width: 100%; padding: 14px; border-radius: 9px; background: var(--brand-bg); color: var(--brand-contrast); font-size: 18px; font-weight: bold; font-family: inherit; text-align: center; text-decoration: none; }
   .checkin-row { display: flex; gap: 10px; margin-bottom: 8px; }
   .checkin-btn { flex: 1; padding: 16px 8px; border-radius: 10px; border: 2px solid var(--border); background: var(--input-bg); color: var(--text); font-family: inherit; font-size: 17px; font-weight: bold; cursor: pointer; text-align: center; }
   .checkin-btn.yes { color: var(--btn-yes-fg); }
@@ -313,10 +316,16 @@
     </div>
   </div>
 
+  <!-- F3Go30-313u: two guidance lines, one banner. A server that answered with an error is the
+       Site Q's to hear about; a request that never made it across the network is not — telling a
+       PAX on a dead connection to email their Site Q sends them chasing the wrong person. Which
+       line shows (and whether the contact link shows at all) is decided by showApiError_ from
+       the error's own `isTransport` flag. -->
   <div id="apiErrorBanner" class="api-error-banner hidden">
-    <strong>Something went wrong.</strong>
-    <span>Please try again, or refresh the browser and try again. If the problem persists,
+    <strong id="apiErrorHeadline">Something went wrong.</strong>
+    <span id="apiErrorServerGuidance">Please try again, or refresh the browser and try again. If the problem persists,
       notify <span id="apiErrorSiteQName">your Site Q</span><a id="apiErrorContactLink" class="hidden" href="#">(email)</a>.</span>
+    <span id="apiErrorNetworkGuidance" class="hidden">Check your internet connection and try again — nothing was lost.</span>
     <div id="apiErrorDetail" class="api-error-detail"></div>
   </div>
 
@@ -347,6 +356,22 @@
 
     <div id="step-tokenLoading" class="hidden">
       <div class="card"><p class="muted">Signing you in…</p></div>
+    </div>
+
+    <!-- F3Go30-ez8v: tail-of-month case — this PAX is already signed up for NEXT month but not
+         the CURRENT one (e.g. they signed up in the last days of July for August). Rather than
+         silently dropping them into a signup wizard defaulted to the current month with no
+         acknowledgement of what they already did, ask first. -->
+    <div id="step-nextMonthChoice" class="hidden">
+      <div id="nmcChoiceCard" class="card">
+        <h2>Already signed up</h2>
+        <p id="nmcChoiceText" class="muted"></p>
+        <button class="primary" id="nmcYesBtn" style="margin-top:10px;"></button>
+        <button class="secondary" id="nmcNoBtn" style="margin-top:10px;"></button>
+      </div>
+      <div id="nmcDoneCard" class="card hidden center">
+        <p id="nmcDoneText"></p>
+      </div>
     </div>
 
     <!-- F3Go30-833s.9: the signup flow, ported from script/SignupApp.html so it runs as a step
@@ -449,15 +474,37 @@
         <button class="secondary" id="suChooseBackBtn">Back</button>
       </div>
 
+      <!-- F3Go30-1f75: the check-in page is the primary call to action here, exactly as it is in
+           the confirmation email (CHECKIN_EMAIL_COPY_, script/signupEmail.js) — a personal
+           bookmarkable link that skips the name/email form on every future visit. The Tracker
+           sheet is the fallback for someone who can't get the check-in page to work, not the
+           headline. Copy is deliberately shorter than the email's: this card is read once,
+           standing up, on a phone. -->
       <div id="su-step-done" class="card hidden center">
         <div class="checkmark">&#10003;</div>
         <h2>You're committed!</h2>
         <p>Your Hard Commit is saved for <strong id="suSavedMonthLabel"></strong>.</p>
         <p class="muted">A confirmation email is on its way to <span id="suSavedEmailLabel"></span>.</p>
-        <a id="suSavedTrackerLink" href="#" target="_blank" rel="noopener" class="signup-link">Open the tracker &rarr;</a>
-        <div style="margin-top:26px;">
-          <button class="secondary" id="suDoneCheckinBtn">Continue to check in &rarr;</button>
+        <div id="suDoneCheckinBlock" style="margin-top:24px;">
+          <a class="primary" id="suDoneCheckinLink" href="#">Open my check-in page &rarr;</a>
+          <p class="muted" style="margin-top:14px;text-align:left;">
+            That page is <strong>your personal link</strong> &mdash; bookmark it or Add to Home
+            Screen, and it will remember you, so you never have to type your name and email again.
+          </p>
+          <p class="muted" style="text-align:left;">
+            Each day of your Go30 month, tap <strong>I Hit it!</strong> or <strong>Missed it</strong>
+            there, then tap <strong>Continue to Dashboard</strong> to see your streak and progress.
+          </p>
+          <p class="muted" id="suDoneNotYetNote" style="text-align:left;font-size:14px;color:var(--text-faint);">
+            Signed up for a month that hasn't started yet? The link works now &mdash; it just won't
+            have anything to record until that month begins.
+          </p>
         </div>
+        <p id="suDoneTrackerHelp" class="muted" style="margin-top:22px;font-size:14px;color:var(--text-faint);text-align:left;">
+          Having trouble with the check-in page? All Go30 data lives in the shared Tracker sheet
+          &mdash; you normally won't need it, but it's here:
+          <a id="suSavedTrackerLink" href="#" target="_blank" rel="noopener" style="color:var(--link);font-weight:bold;">Open the tracker &rarr;</a>
+        </p>
       </div>
 
       <div id="su-step-feedback" class="card hidden">
@@ -477,7 +524,7 @@
     <div id="step-identify">
       <div class="card">
         <h1>Daily Check-in</h1>
-        <p class="muted">Enter your F3 name and email to check in for today and see your dashboard.</p>
+        <p class="muted">Enter your F3 name and email to check in for today, then continue to your dashboard.</p>
         <form id="identifyForm">
           <label class="field-label">F3 Name</label>
           <input type="text" id="idF3Name" name="f3Name" placeholder="e.g. Splinter">
@@ -726,7 +773,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.8";
+  var STATIC_BUILD_VERSION_ = "2.4.9";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -861,6 +908,82 @@
     try { localStorage.removeItem(TOKEN_STORAGE_KEY_); } catch (e) { /* not fatal */ }
   }
 
+  // ── Transport (F3Go30-313u) ───────────────────────────────────────────────────────────────
+  // Every call below is a cross-origin POST to the GAS /exec endpoint, which answers 302 ->
+  // script.googleusercontent.com/macros/echo. That second hop is observably unreliable in BOTH
+  // directions — seen live on SIT 2026-07-28: a request that never reached GAS at all (browser
+  // raised `TypeError: Failed to fetch`, no doPost in Axiom) and, minutes later, a request GAS
+  // executed and answered in 668ms whose response never arrived (the page sat on "Checking…"
+  // indefinitely; the same call succeeded on every retry). Neither flake is ours to fix.
+  //
+  // What IS ours is the damage. Without a timeout a lost response never settles the promise, so
+  // `finally` never runs, pendingRequestCount_ never decrements, the "Syncing…" indicator spins
+  // forever and the submitting button stays disabled — no recovery but a manual reload, and no
+  // hint to the PAX that a reload is what is needed.
+  // Two timeouts, because giving up early costs something very different on each side.
+  //
+  // Both numbers are calibrated against MEASURED client-side round trips, not against Axiom's
+  // server-side durationMs — the 302 hop to script.googleusercontent.com roughly doubles the
+  // server's own figure, and calibrating on the server number produces a timeout that fires on
+  // perfectly healthy requests. 12 live identify calls against SIT, no abort, 2026-07-28:
+  // min 3.3s, median 4.8s, p90 6.5s, max 9.1s, plus one that the browser itself gave up on at
+  // 29s with `Failed to fetch` (~8% loss — the failure this whole block exists for).
+  //
+  // Reads: 12s, comfortably above the 9.1s slowest healthy call, so the timeout fires on losses
+  // rather than on slowness. A read can be re-asked for free, so an unnecessary abort is cheap —
+  // but not free, since it doubles load on an endpoint already having a bad day.
+  //
+  // Writes: never retried (see RETRYABLE_ACTIONS_), so aborting one early means telling a PAX
+  // their check-in or signup failed when it may well have landed server-side — the worst outcome
+  // available here. Long leash; the timeout exists only to guarantee the promise settles at all,
+  // not to be reached in normal operation.
+  var REQUEST_TIMEOUT_MS_ = 12000;
+  var WRITE_TIMEOUT_MS_ = 25000;
+
+  // Read-only actions, safe to repeat. A retry here is invisible to the PAX and costs one extra
+  // execution. Deliberately a whitelist and not "everything except the writes I remembered":
+  // a new action is un-retried until someone states it is idempotent, which is the safe default
+  // for the wrong guess. NEVER add a write — a lost response on a write may mean it landed, so
+  // retrying one risks a duplicate signup, check-in or bonus row.
+  var RETRYABLE_ACTIONS_ = ['identify', 'dashboard', 'bonusList', 'monthGrid'];
+
+  var NETWORK_ERROR_MESSAGE_ = 'Couldn’t reach the server. Check your internet connection and try again.';
+
+  // A request aborted because the page is going away is not a failure worth alarming anyone
+  // about — the document is already doomed and the banner would flash for an instant on the way
+  // out. showApiError_ reads this flag; see AC5 on F3Go30-313u.
+  var pageIsUnloading_ = false;
+  window.addEventListener('pagehide', function() { pageIsUnloading_ = true; });
+
+  /** The single point where a below-HTTP failure becomes a PAX-readable one. Flagged so the
+   * banner can drop the Site-Q escalation (a connectivity problem is not the Site Q's to fix)
+   * and so the retry below can tell a transport failure from a server that answered. */
+  function makeTransportError_() {
+    var err = new Error(NETWORK_ERROR_MESSAGE_);
+    err.isTransport = true;
+    return err;
+  }
+
+  /** One attempt, bounded. Resolves with the raw Response (status handling stays in callApi);
+   * rejects with a flagged transport error for anything that dies below HTTP, including the
+   * timeout — the abort and a genuine network drop are the same thing to the PAX. */
+  function fetchAttempt_(url, bodyJson, timeoutMs) {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, timeoutMs);
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: bodyJson,
+      signal: controller.signal,
+    }).then(function(res) {
+      clearTimeout(timeoutId);
+      return res;
+    }, function() {
+      clearTimeout(timeoutId);
+      throw makeTransportError_();
+    });
+  }
+
   // F3Go30-5nfj.5: reference-counted, not a boolean — more than one request can be in flight at
   // once (e.g. the PAX clicking multiple checkin buttons before earlier ones settle), so the
   // indicator must stay visible until the LAST outstanding request settles, not just the first.
@@ -888,12 +1011,18 @@
       // sent through as-is; buildWebAppRequestLog_ treats any falsy value as 'legacy'.
       clientVersion: STATIC_BUILD_VERSION_
     });
+    var url = WEBAPP_URL + '?cmd=' + (cmd || CMD_);
+    var bodyJson = JSON.stringify(body);
+    var mayRetry = RETRYABLE_ACTIONS_.indexOf(action) !== -1;
+    var timeoutMs = mayRetry ? REQUEST_TIMEOUT_MS_ : WRITE_TIMEOUT_MS_;
     pendingRequestCount_++;
     updateSyncingIndicator_();
-    return fetch(WEBAPP_URL + '?cmd=' + (cmd || CMD_), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
+    return fetchAttempt_(url, bodyJson, timeoutMs).catch(function(err) {
+      // Exactly one retry, and only for a read that died below HTTP. A server that ANSWERED —
+      // any status, any json.ok:false — is not re-asked: it has already made its decision, and
+      // repeating the call would only double the load while returning the same answer.
+      if (!mayRetry || !err || !err.isTransport) throw err;
+      return fetchAttempt_(url, bodyJson, timeoutMs);
     }).then(function(res) {
       if (!res.ok) throw new Error('Server returned HTTP ' + res.status);
       return res.json();
@@ -1082,24 +1211,62 @@
   applyVersionState_(STATIC_BUILD_VERSION_, null);
 
   function showStep(name) {
-    ['identify', 'checkin', 'dashboard', 'bonus', 'signup'].forEach(function(s) {
+    ['identify', 'checkin', 'dashboard', 'bonus', 'signup', 'nextMonthChoice'].forEach(function(s) {
       $('step-' + s).classList.toggle('hidden', s !== name);
     });
     $('moreBtn').classList.toggle('hidden', name !== 'dashboard');
-    $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup');
+    $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice');
     if (name === 'checkin' || name === 'dashboard') state.bonusReturnStep = name;
   }
 
+  /** F3Go30-ez8v: a known PAX who's registered for NEXT month but not the current one — offer the
+   * choice instead of silently opening the signup wizard defaulted to the current month. */
+  function openNextMonthChoice_(res) {
+    saveIdentityToStorage_(res.f3Name, res.email);
+    state.f3Name = res.f3Name;
+    state.email = res.email;
+    state.nmcCurrentMonthLabel = res.currentMonthLabel || 'this month';
+    state.nmcNextMonthLabel = res.nextMonthLabel || 'next month';
+    $('nmcChoiceCard').classList.remove('hidden');
+    $('nmcDoneCard').classList.add('hidden');
+    $('nmcChoiceText').textContent = "You're signed up for " + state.nmcNextMonthLabel +
+      " already, but not for " + state.nmcCurrentMonthLabel + ' yet.';
+    $('nmcYesBtn').textContent = 'Yes, sign me up for ' + state.nmcCurrentMonthLabel;
+    $('nmcNoBtn').textContent = "No, I'll check back for " + state.nmcNextMonthLabel;
+    showStep('nextMonthChoice');
+  }
+
+  $('nmcYesBtn').addEventListener('click', function() {
+    openSignup_('current');
+  });
+  $('nmcNoBtn').addEventListener('click', function() {
+    $('nmcChoiceCard').classList.add('hidden');
+    $('nmcDoneCard').classList.remove('hidden');
+    $('nmcDoneText').textContent = 'Okay — check back for ' + state.nmcNextMonthLabel + '. See you then!';
+  });
+
   function showApiError_(action, err) {
+    // F3Go30-313u AC5: a request the browser killed because this document is being torn down is
+    // not a failure to report — the banner would flash for an instant on the way out and mean
+    // nothing. Bail before touching the DOM.
+    if (pageIsUnloading_) return;
+
     var detail =
       'Time: ' + new Date().toISOString() + '\n' +
       'Action: ' + action + '\n' +
       'Error: ' + (err && err.message ? err.message : String(err));
     $('apiErrorDetail').textContent = detail;
 
+    // F3Go30-313u AC4: a transport failure gets connectivity wording and no Site-Q escalation;
+    // a server-reported error keeps the original copy and contact path untouched (AC6).
+    var isTransport = !!(err && err.isTransport);
+    $('apiErrorHeadline').textContent = isTransport ? 'Couldn’t reach the server.' : 'Something went wrong.';
+    $('apiErrorNetworkGuidance').classList.toggle('hidden', !isTransport);
+    $('apiErrorServerGuidance').classList.toggle('hidden', isTransport);
+
     $('apiErrorSiteQName').textContent = SITE_Q_NAME || 'your Site Q';
     var contactLink = $('apiErrorContactLink');
-    if (SITE_Q_EMAIL) {
+    if (SITE_Q_EMAIL && !isTransport) {
       contactLink.href = 'mailto:' + SITE_Q_EMAIL +
         '?subject=' + encodeURIComponent('F3 Go30 check-in error') +
         '&body=' + encodeURIComponent(detail);
@@ -1192,6 +1359,32 @@
    * clearing the day selection) — without it, a PAX who opened the calendar during the brief
    * window before the live response landed would see it silently slammed shut out from under
    * them the instant reconciliation completed. */
+  // F3Go30-1f75: the params runIdentityBootstrap_ reads to decide WHICH STEP this page opens on.
+  // They describe how the PAX arrived, not who they are, so they must not survive into a URL we
+  // are telling them to bookmark — see buildBookmarkableUrl_.
+  var SIGNUP_ROUTE_PARAMS_ = ['cmd', 'targetMonth', 'autoStart'];
+
+  /** The bookmarkable check-in URL for a resolved token: this page's own URL with the token
+   * installed and the signup routing stripped, everything else (webapp, ns, contextDate) left
+   * exactly as it was. Kept separate from applyIdentifySuccess_ so the rewrite is testable
+   * without standing up the whole check-in view. */
+  function buildBookmarkableUrl_(href, token) {
+    var u = new URL(href);
+    u.searchParams.set('id', token);
+    SIGNUP_ROUTE_PARAMS_.forEach(function(p) { u.searchParams.delete(p); });
+    return u.toString();
+  }
+
+  /** Which month the su-step-choose screen preselects. A PAX who reaches that screen is usually
+   * signing up for the month ahead rather than editing the one already underway, so 'next' wins
+   * whenever it is on offer — unless they followed a link that explicitly named a month, which
+   * is what an emailed "edit your current-month goals" link does. */
+  function defaultTargetMonth_(months, urlTargetMonth) {
+    if (!months || !months.next) return 'current';
+    if (urlTargetMonth === 'current') return 'current';
+    return 'next';
+  }
+
   function applyIdentifySuccess_(res, opts) {
     opts = opts || {};
     state.f3Name = res.f3Name;
@@ -1203,11 +1396,14 @@
     // an async fetch either way, typed or token), so nothing else ever puts the token in the
     // URL. history.replaceState (not pushState) keeps this a no-op for the browser's back
     // button, same as GAS's single-page-load-per-identify model has no extra history entry.
+    //
+    // F3Go30-1f75: buildBookmarkableUrl_ also strips the signup routing params. Reaching here
+    // means the PAX is now identified into CHECK-IN, however they arrived; leaving cmd=signup on
+    // the URL meant the done card's own "bookmark this" advice produced a bookmark that reopened
+    // signup on every future launch.
     if (res.identityToken) {
       try {
-        var bookmarkUrl = new URL(location.href);
-        bookmarkUrl.searchParams.set('id', res.identityToken);
-        history.replaceState(null, '', bookmarkUrl);
+        history.replaceState(null, '', buildBookmarkableUrl_(location.href, res.identityToken));
       } catch (e) { /* not fatal — worst case the URL just isn't bookmarkable this visit */ }
     }
     $('idSignupBtn').classList.add('hidden');
@@ -1283,10 +1479,16 @@
       // F3Go30-833s.9: this PAX is known but has no registration for the current month — open
       // the signup step in place. Previously a top-level cross-origin navigation to the GAS
       // signup page, which on an installed iOS app handed the PAX off to Safari mid-flow.
-      saveIdentityToStorage_(result.f3Name, result.email);
-      state.f3Name = result.f3Name;
-      state.email = result.email;
-      openSignup_('current');
+      // F3Go30-ez8v: unless they're already registered for NEXT month (tail-of-month signup),
+      // in which case ask first instead of dropping them straight into a current-month wizard.
+      if (result.knownPaxNextMonthRegistered) {
+        openNextMonthChoice_(result);
+      } else {
+        saveIdentityToStorage_(result.f3Name, result.email);
+        state.f3Name = result.f3Name;
+        state.email = result.email;
+        openSignup_('current');
+      }
     } else {
       $('idF3Name').value = result.submittedF3Name || '';
       $('idEmail').value = result.submittedEmail || '';
@@ -1367,11 +1569,17 @@
           // signup step in place, with their identity already in memory. openSignup_ calls
           // showStep('signup'), which also hides whatever step was up (possibly #step-checkin,
           // painted a moment earlier from the snapshot).
+          // F3Go30-ez8v: unless they're already registered for NEXT month (tail-of-month
+          // signup) — ask first instead of dropping them straight into a current-month wizard.
           clearCheckinSnapshot_();
-          saveIdentityToStorage_(res.f3Name, res.email);
-          state.f3Name = res.f3Name;
-          state.email = res.email;
-          openSignup_('current');
+          if (res.knownPaxNextMonthRegistered) {
+            openNextMonthChoice_(res);
+          } else {
+            saveIdentityToStorage_(res.f3Name, res.email);
+            state.f3Name = res.f3Name;
+            state.email = res.email;
+            openSignup_('current');
+          }
         } else {
           // matched:false (revoked/stale token) or a plain miss: clear any stale snapshot and fall
           // back to the blank identify form, even if a snapshot had just been painted.
@@ -1893,7 +2101,6 @@
     teamType: '', team: '', who: '', what: '', how: '', phone: '', nag: false,
     targetMonth: 'current',
     feedbackRating: 0,
-    savedToken: null,
   };
 
   var SIGNUP_STEP_ORDER_ = ['intro', 'identify', 'info', 'choose', 'done'];
@@ -1925,7 +2132,6 @@
     opts = opts || {};
     hideApiError_();
     signupState.targetMonth = (targetMonth === 'next') ? 'next' : 'current';
-    signupState.savedToken = null;
     $('suIdError').classList.add('hidden');
     $('suF3Name').value = state.f3Name || '';
     $('suEmail').value = state.email || '';
@@ -2075,17 +2281,24 @@
       signupState.feedbackRating = 0;
       renderSignupFeedbackStars_();
       // A current-month save returns a session token (handleSignupSave_): the PAX can check in
-      // today. SignupApp.html spends that token on a top-level redirect into the check-in app;
-      // here it is simply stored, and "Continue to check in" resolves it in place. Storing it
-      // also means an installed cold launch resolves identity without a retype (F3Go30-833s.1).
-      signupState.savedToken = res.identityToken || null;
+      // today. Persisting it means an installed cold launch resolves identity without a retype
+      // (F3Go30-833s.1). Nothing spends it in-page any more — the done card's check-in CTA is a
+      // real navigation link now (F3Go30-1f75), so there is no in-page resolve to hand it to.
       if (res.identityToken) {
         saveTokenToStorage_(res.identityToken);
         SAVED_IDENTITY_TOKEN = res.identityToken;
       }
-      // Hidden only when there is neither a new token to spend nor an already-resolved check-in
-      // to go back to — i.e. a next-month signup by someone not registered for this month.
-      $('suDoneCheckinBtn').classList.toggle('hidden', !signupState.savedToken && !state.checkinReady);
+      // F3Go30-1f75: the personal check-in link is offered for EVERY save the server could mint a
+      // session for, current month or next — a next-month registration's page is already theirs,
+      // it simply has nothing to record until the month starts. Keyed on checkinUrl, NOT on
+      // identityToken: that field means "spend this now" and the server withholds it for a
+      // next-month save, which is why this block used to come up empty for exactly the PAX who
+      // most needed the bookmark. The href is the server's URL, byte-identical to the one their
+      // confirmation email carries (buildSignupSaveResponse_ / buildCheckinEmailLinks_), so the
+      // bookmark they take from this card and the one they take from their inbox are one link.
+      var checkinUrl = res.checkinUrl || '';
+      $('suDoneCheckinLink').href = checkinUrl || '#';
+      $('suDoneCheckinBlock').classList.toggle('hidden', !checkinUrl);
       showSignupStep_('done');
       // AC6 (F3Go30-k5fn.2): this save just registered the PAX for the month the calendar's
       // forward-nav signup gate was showing — mark it registered and drop its stale
@@ -2101,33 +2314,6 @@
     }).catch(function(err) {
       showApiError_('save', err);
     }).finally(function() { setButtonLoading_(triggerBtn, false); });
-  }
-
-  /** The in-page replacement for SignupApp.html's post-save redirect into the check-in app:
-   * resolve the freshly-minted token through cmd=checkin's identify and paint the check-in
-   * step, without this document ever navigating. */
-  function resolveTokenIntoCheckin_(token) {
-    showStep('identify');
-    $('step-identify').classList.add('hidden');
-    $('step-tokenLoading').classList.remove('hidden');
-    callApi('identify', { token: token })
-      .then(function(res) {
-        if (res.config) applyServerConfig_(res.config);
-        if (res.matched) {
-          applyIdentifySuccess_(res);
-          saveCheckinSnapshot_(token, res);
-        } else {
-          showStep('identify');
-        }
-      })
-      .catch(function(err) {
-        showStep('signup');
-        showSignupStep_('done');
-        showApiError_('identify', err);
-      })
-      .finally(function() {
-        $('step-tokenLoading').classList.add('hidden');
-      });
   }
 
   $('suIntroNextBtn').addEventListener('click', function() { showSignupStep_('identify'); });
@@ -2169,17 +2355,15 @@
       signupState.targetMonth = 'current';
       performSignupSave_($('suInfoNextBtn'));
     } else {
+      // Set once, on entry to the step — NOT inside renderSignupMonthChoices_, which re-runs on
+      // every option click and would keep overwriting what the PAX just picked.
+      signupState.targetMonth = defaultTargetMonth_(signupState.months, URL_TARGET_MONTH_);
       renderSignupMonthChoices_();
       showSignupStep_('choose');
     }
   });
 
   $('suSaveBtn').addEventListener('click', function() { performSignupSave_($('suSaveBtn')); });
-
-  $('suDoneCheckinBtn').addEventListener('click', function() {
-    if (signupState.savedToken) resolveTokenIntoCheckin_(signupState.savedToken);
-    else showStep('checkin');
-  });
 
   $('suSendFeedbackBtn').addEventListener('click', function() {
     hideApiError_();
