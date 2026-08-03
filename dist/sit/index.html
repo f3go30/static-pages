@@ -813,7 +813,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.2";
+  var STATIC_BUILD_VERSION_ = "2.4.10.3";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -3020,6 +3020,10 @@
     var todayIso = isoDate_(new Date());
     var chain = state.dashboardPrefetchPromise || loadDashboard_(undefined, { silent: true });
     chain.then(function() {
+      // A silent revalidate that resolves means we DID reach the server, so any prior
+      // transport banner is stale and can be cleared. If revalidate fails, catch below
+      // keeps the banner up so cached rendering never masks an ongoing outage.
+      hideApiError_();
       var fresh = state.monthCache[monthKeyOf_(new Date())];
       if (fresh && fresh.dayDates.indexOf(todayIso) !== -1 &&
           state.viewDate && isoDate_(state.viewDate) === todayIso) {
