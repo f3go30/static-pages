@@ -813,7 +813,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.6";
+  var STATIC_BUILD_VERSION_ = "2.4.10.7";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2679,12 +2679,19 @@
       bonusesEl.appendChild(row);
     });
 
-    // Same last-DISPLAY_WINDOW_DAYS_-days windowing renderDashboard_ applies to the self chart,
-    // minus the prior-month padding self gets (view has no priorMonthDayValues — see
-    // memberViewForIndex_) — early-month days just show a shorter chart for a teammate.
+    // Same last-DISPLAY_WINDOW_DAYS_-days windowing + prior-month padding renderDashboard_
+    // applies to the self chart (F3Go30-uz9e.1: view.priorMonthDayValues now comes from the same
+    // per-PAX rolling history window — see memberViewForIndex_/buildDashboardPaxRow_ — for every
+    // teammate, not just self, so this no longer needs a self-only special case).
     var winStart = Math.max(0, currentDay - DISPLAY_WINDOW_DAYS_);
     var winDaySegments = view.daySegments.slice(winStart, currentDay);
     var winRollingAverage = view.rollingAverage.slice(winStart, currentDay);
+    var priorNeeded = DISPLAY_WINDOW_DAYS_ - winDaySegments.length;
+    if (priorNeeded > 0 && view.priorMonthDayValues && view.priorMonthDayValues.length) {
+      var priorSlice = view.priorMonthDayValues.slice(-priorNeeded);
+      winDaySegments = priorSlice.map(valueToSegmentLocal_).concat(winDaySegments);
+      winRollingAverage = buildRollingAverageLocal_(priorSlice, ROLLING_AVERAGE_WINDOW_DAYS_).concat(winRollingAverage);
+    }
     $('pdAvgChart').innerHTML = buildAvgChartSvg_(winRollingAverage, winDaySegments, winDaySegments.length);
   }
 
@@ -2842,6 +2849,10 @@
       dayValues: sliced,
       daySegments: buildDaySegmentsLocal_(sliced, totalDays),
       rollingAverage: (member.rollingAverage || []).slice(0, dayIndex + 1),
+      // F3Go30-uz9e.1: passed through unsliced (it's already scoped to the prior month, not the
+      // viewed one) so renderPaxDetail_ can pad a teammate's chart across a month boundary the
+      // same way renderDashboard_ pads self's.
+      priorMonthDayValues: member.priorMonthDayValues || [],
       bonusByType: bonusForDay,
     };
   }
