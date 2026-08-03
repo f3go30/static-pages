@@ -813,7 +813,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.4";
+  var STATIC_BUILD_VERSION_ = "2.4.10.5";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2822,6 +2822,14 @@
 
   function memberViewForIndex_(member, dayIndex, totalDays) {
     var sliced = (member.dayValues || []).slice(0, dayIndex + 1);
+    // Viewing the latest reported day (the default/no-date-nav case): sliced is the whole array,
+    // so use the server's own streak/maxStreak30 (F3Go30-5uk2 — historyValues-derived, correctly
+    // spans a month boundary) instead of recomputing from this-month-only dayValues, which would
+    // silently drop any streak that started in the prior month. Date-nav to an earlier day still
+    // falls back to the local same-month approximation below — there's no server figure for an
+    // arbitrary past day without another round trip, and that's a pre-existing, separate
+    // limitation of browsing history, not what F3Go30-5uk2 fixed.
+    var isLatest = sliced.length === (member.dayValues || []).length;
     var bonusForDay = (member.bonusByTypeSeries && member.bonusByTypeSeries[dayIndex]) || member.bonusByType;
     var score = computeScoreForDayLocal_(sliced, bonusForDay);
     return {
@@ -2829,11 +2837,8 @@
       team: member.team,
       score: score,
       scorePct: computeScorePctLocal_(score, sliced),
-      streak: computeStreakLocal_(sliced),
-      // MAX_STREAK_WINDOW_DAYS_ mirrors the self-tile's windowing (computeWindowedStreaks_) —
-      // team/board rows don't get the prior-month lookback self gets, so this is a same-month-
-      // only approximation, same as scorePct/streak above already are for every non-self row.
-      maxStreak30: computeMaxStreakLocal_(sliced, MAX_STREAK_WINDOW_DAYS_),
+      streak: isLatest ? member.streak : computeStreakLocal_(sliced),
+      maxStreak30: isLatest ? member.maxStreak30 : computeMaxStreakLocal_(sliced, MAX_STREAK_WINDOW_DAYS_),
       dayValues: sliced,
       daySegments: buildDaySegmentsLocal_(sliced, totalDays),
       rollingAverage: (member.rollingAverage || []).slice(0, dayIndex + 1),
@@ -2874,7 +2879,16 @@
     }
     var avgWindowCount = avgDaySegments.length;
 
-    var streaks = computeWindowedStreaks_(selfValues, d.priorMonthDayValues, MAX_STREAK_WINDOW_DAYS_);
+    // F3Go30-5uk2: on the latest reported day (no date-nav truncation), d.streak/d.maxStreak30
+    // are the server's historyValues-derived figures — prefer those over recomputing locally,
+    // since computeWindowedStreaks_ below only has d.priorMonthDayValues (one month of lookback)
+    // to work with, not the full rolling window the server's PaxCache history keeps. Date-nav to
+    // an earlier day still falls back to the local approximation (no server figure exists for an
+    // arbitrary past day without another round trip).
+    var isLatestSelf = selfValues.length === (d.dayValues || []).length;
+    var streaks = isLatestSelf
+      ? { current: d.streak, best: d.maxStreak30 }
+      : computeWindowedStreaks_(selfValues, d.priorMonthDayValues, MAX_STREAK_WINDOW_DAYS_);
     $('dStreak').textContent = streaks.current;
     $('dStreakBest30').textContent = streaks.best;
 
