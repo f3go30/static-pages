@@ -813,7 +813,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.12";
+  var STATIC_BUILD_VERSION_ = "2.4.10.13";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2580,7 +2580,7 @@
     svg += '<text x="0" y="' + (mapY(1) + 4) + '" font-size="13" fill="#888">+1</text>';
     svg += '<text x="0" y="' + (zY - 2) + '" font-size="13" fill="#888">0</text>';
     svg += '<text x="0" y="' + (mapY(-1) + 4) + '" font-size="13" fill="#888">-1</text>';
-    var MIN_BAR_HT_ = 8; // 'missed it' (v=0) collapses to zero height at the midline — keep it
+    var MIN_BAR_HT_ = 16; // 'missed it' (v=0) collapses to zero height at the midline — keep it
                           // visible as a small bar straddling the line rather than invisible.
     for (var i = 0; i < currentDay; i++) {
       var status = daySegments[i];
@@ -2591,9 +2591,9 @@
       svg += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + ht.toFixed(1) + '" fill="' + color + '" opacity="0.35"/>';
     }
     var points = (rollingAverage || []).map(function(v, i) { return mapX(i).toFixed(1) + ',' + mapY(v).toFixed(1); }).join(' ');
-    svg += '<polyline points="' + points + '" fill="none" stroke="#2f5d50" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+    svg += '<polyline points="' + points + '" fill="none" stroke="#2fe0e0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
     (rollingAverage || []).forEach(function(v, i) {
-      svg += '<circle cx="' + mapX(i).toFixed(1) + '" cy="' + mapY(v).toFixed(1) + '" r="3" fill="#2f5d50"/>';
+      svg += '<circle cx="' + mapX(i).toFixed(1) + '" cy="' + mapY(v).toFixed(1) + '" r="4" fill="#2fe0e0"/>';
     });
     svg += '</svg>';
     return svg;
