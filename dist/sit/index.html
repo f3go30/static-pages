@@ -175,11 +175,10 @@
   .error-text { font-size: 16px; color: var(--danger); margin-bottom: 8px; }
   .warning-text { font-size: 15px; color: var(--warn-fg); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
   .hidden { display: none; }
-  .stats-row { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 12px; margin-top: 32px; align-items: stretch; }
-  /* F3Go30 pax-detail: Total Score's bonus points move out into their own Bonus tile, so this
-     step's stats-row carries 4 tiles instead of 3 — even 2x2 grid rather than the self
-     dashboard's 3-wide layout. */
-  #step-paxDetail .stats-row { grid-template-columns: repeat(2, 1fr); }
+  /* F3Go30: Total Score's bonus points live in their own Bonus tile now (both here and in
+     pax-detail — the only two .stats-row users), so this is a 4-tile even 2x2 grid rather than
+     the old 3-wide weighted layout. */
+  .stats-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 32px; align-items: stretch; }
   .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; display: flex; flex-direction: column; align-items: center; }
   .stat-card-clickable { cursor: pointer; }
   .stat-card-clickable:hover, .stat-card-clickable:focus-visible { border-color: var(--brand); background: var(--soft-bg); }
@@ -195,10 +194,10 @@
   .score-tile-body { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
   .score-main { display: flex; flex-direction: column; align-items: center; }
   .score-bonus-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; border-top: 1px solid var(--score-divider); padding-top: 8px; width: 100%; justify-items: center; }
-  /* F3Go30 pax-detail Bonus tile: bonus list as its own stat-card, not stacked under Total
-     Score, so no divider/top-padding needed — see #pdBonusTile. */
-  .score-bonus-list.standalone { border-top: none; padding-top: 0; margin-top: 4px; }
-  #pdBonusTile .score-bonus-list { grid-template-columns: 1fr; }
+  /* F3Go30 Bonus tile (dashboard's #dBonusTile and pax-detail's #pdBonusTile): bonus list as
+     its own stat-card, not stacked under Total Score, so no divider/top-padding needed and a
+     single column fits the narrower tile. */
+  .score-bonus-list.standalone { border-top: none; padding-top: 0; margin-top: 4px; grid-template-columns: 1fr; }
   .bonus-type-row { display: flex; align-items: center; gap: 5px; }
   .bonus-type-code { font-family: monospace; font-weight: bold; font-size: 12px; padding: 1px 5px; border-radius: 3px; }
   .bonus-type-code.fe { background: var(--pill-fe-bg); color: var(--pill-fe-fg); }
@@ -281,10 +280,8 @@
   .card-head-row h2 { margin: 0; white-space: nowrap; }
   .btn-inline { width: auto; margin: 0; padding: 8px 14px; flex-shrink: 0; }
   @media (max-width: 480px) {
-    .stats-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stats-row { gap: 8px; }
     .stat-card { padding: 10px; }
-    .stat-card:nth-child(3) { grid-column: 1 / -1; }
-    #step-paxDetail .stat-card:nth-child(3) { grid-column: auto; }
     .stat-label { font-size: 12px; margin-bottom: 4px; }
     .stat-value { font-size: 27px; }
     .stat-sub { font-size: 12px; }
@@ -666,8 +663,14 @@
               <div class="stat-value" id="dScore"></div>
               <div class="stat-sub" id="dScoreSub"></div>
             </div>
-            <div class="score-bonus-list" id="dBonuses"></div>
           </div>
+        </div>
+        <!-- F3Go30: bonus points pulled out of Total Score into their own tile — clickable here
+             (self scope) to open the add/edit Bonus Points view; the pax-detail popup's Bonus
+             tile (#pdBonusTile) is read-only since it may be showing a teammate. -->
+        <div class="stat-card stat-card-clickable" id="dBonusTile" role="button" tabindex="0" title="Add/edit bonus points">
+          <div class="stat-label">BONUS</div>
+          <div class="score-bonus-list standalone" id="dBonuses"></div>
         </div>
       </div>
 
@@ -764,9 +767,10 @@
             </div>
           </div>
         </div>
-        <!-- F3Go30: bonus points pulled out of Total Score into their own tile — clicking it
-             opens the (self-only) add/edit Bonus Points view, same as the header bonus button. -->
-        <div class="stat-card stat-card-clickable" id="pdBonusTile" role="button" tabindex="0" title="Add/edit bonus points">
+        <!-- F3Go30: bonus points pulled out of Total Score into their own tile. Not clickable —
+             unlike the dashboard's #dBonusTile, this popup may be showing a teammate, and bonus
+             editing is always self-scoped (see openBonusManage_). -->
+        <div class="stat-card" id="pdBonusTile">
           <div class="stat-label">BONUS</div>
           <div class="score-bonus-list standalone" id="pdBonuses"></div>
         </div>
@@ -859,7 +863,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.25";
+  var STATIC_BUILD_VERSION_ = "2.4.10.26";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1317,7 +1321,7 @@
     $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name]);
     $('moreBtn').classList.toggle('hidden', name !== 'dashboard');
     $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice' || name === 'paxDetail');
-    if (name === 'checkin' || name === 'dashboard' || name === 'paxDetail') state.bonusReturnStep = name;
+    if (name === 'checkin' || name === 'dashboard') state.bonusReturnStep = name;
   }
 
   /** F3Go30-ez8v: a known PAX who's registered for NEXT month but not the current one — offer the
@@ -3496,8 +3500,9 @@
   $('bonusType').addEventListener('change', updateBonusLinkVisibility_);
 
   // Bonus editing is always self-scoped (loadBonusList_ reads state.f3Name — there's no
-  // teammate-editing endpoint), so both the header bonus button and the pax-detail Bonus tile
-  // (which may be showing a teammate) open this same self view.
+  // teammate-editing endpoint), so only the header bonus button and the dashboard's own Bonus
+  // tile (#dBonusTile) open this view — the pax-detail popup's Bonus tile (#pdBonusTile) may be
+  // showing a teammate and is deliberately not clickable.
   function openBonusManage_() {
     hideApiError_();
     hideBonusSaveNotice_();
@@ -3506,8 +3511,8 @@
     loadBonusList_();
   }
   $('bonusBtn').addEventListener('click', openBonusManage_);
-  $('pdBonusTile').addEventListener('click', openBonusManage_);
-  $('pdBonusTile').addEventListener('keydown', function(e) {
+  $('dBonusTile').addEventListener('click', openBonusManage_);
+  $('dBonusTile').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBonusManage_(); }
   });
   $('bonusBackBtn').addEventListener('click', function() { showStep(state.bonusReturnStep); });
