@@ -189,9 +189,9 @@
   .day-mini-bar { display: flex; gap: 1.5px; align-items: center; justify-content: center; flex: 1; min-width: 0; }
   .day-mini-cell { width: 6px; height: 12px; border-radius: 1px; flex-shrink: 0; }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
-  /* F3Go30: the hit/miss/fail key under the rolling-average chart — a bare line under the chart
-     rather than its own boxed legend, so it shouldn't read as a separate labeled section. */
-  .legend-inline { justify-content: center; margin-top: 6px; }
+  /* F3Go30: the hit/miss/fail key in the space below the rolling-average chart card — a bare
+     line, not its own boxed legend, so it shouldn't read as a separate labeled section. */
+  .legend-inline { justify-content: center; margin-top: 12px; }
   .legend-item { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-faint); }
   .legend-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
   .score-tile-body { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
@@ -677,13 +677,14 @@
       <div class="card chart-card">
         <div class="section-label" style="margin-top:0;">7-DAY ROLLING AVERAGE</div>
         <div id="dAvgChart"></div>
-        <!-- F3Go30: hit/miss/fail color key, demoted from the Month Progress tile's own boxed
-             legend — a bare line, not a labeled block, to conserve vertical space. -->
-        <div class="legend legend-inline">
-          <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
-          <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
-          <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
-        </div>
+      </div>
+      <!-- F3Go30: hit/miss/fail color key, demoted from the Month Progress tile's own boxed
+           legend — a bare line below the chart card, not a labeled block, to conserve vertical
+           space. -->
+      <div class="legend legend-inline">
+        <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
       </div>
 
       <div class="section-label">MY TEAM &middot; <span id="dTeamName"></span></div>
@@ -781,13 +782,14 @@
       <div class="card chart-card">
         <div class="section-label" style="margin-top:0;">7-DAY ROLLING AVERAGE</div>
         <div id="pdAvgChart"></div>
-        <!-- F3Go30: hit/miss/fail color key, demoted from the Month Progress tile's own boxed
-             legend — a bare line, not a labeled block, to conserve vertical space. -->
-        <div class="legend legend-inline">
-          <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
-          <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
-          <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
-        </div>
+      </div>
+      <!-- F3Go30: hit/miss/fail color key, demoted from the Month Progress tile's own boxed
+           legend — a bare line below the chart card, not a labeled block, to conserve vertical
+           space. -->
+      <div class="legend legend-inline">
+        <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
       </div>
 
       <div id="paxDetailGoals" class="hidden"></div>
@@ -872,7 +874,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.27";
+  var STATIC_BUILD_VERSION_ = "2.4.10.28";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
