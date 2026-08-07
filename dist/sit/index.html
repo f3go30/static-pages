@@ -165,14 +165,21 @@
   .checkin-status.status-late { color: var(--danger); font-weight: bold; }
   .checkin-section-label { font-size: 14px; font-weight: bold; letter-spacing: .16em; color: var(--brand); margin: 18px 0 8px; }
   .goals-reminder { background: var(--soft-bg); border: 1px solid var(--soft-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; }
-  .goals-reminder-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-  .goals-reminder-title { font-size: 12px; font-weight: bold; letter-spacing: .04em; text-transform: uppercase; color: var(--brand); }
+  .goals-reminder-edit-row { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  /* F3Go30: "Your Goals"/"Goals" label promoted out of the box to match the TODAY/YESTERDAY
+     section-label style (checkin-section-label) — clicking it expands/collapses the box below. */
+  .goals-toggle-label { cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; }
+  .goals-toggle-icon { font-size: 11px; }
   .goals-reminder-row { font-size: 15px; line-height: 1.4; margin: 3px 0; }
   .goals-reminder-row strong { color: var(--brand); }
   .error-text { font-size: 16px; color: var(--danger); margin-bottom: 8px; }
   .warning-text { font-size: 15px; color: var(--warn-fg); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
   .hidden { display: none; }
   .stats-row { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 12px; margin-top: 32px; align-items: stretch; }
+  /* F3Go30 pax-detail: Total Score's bonus points move out into their own Bonus tile, so this
+     step's stats-row carries 4 tiles instead of 3 — even 2x2 grid rather than the self
+     dashboard's 3-wide layout. */
+  #step-paxDetail .stats-row { grid-template-columns: repeat(2, 1fr); }
   .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; display: flex; flex-direction: column; align-items: center; }
   .stat-card-clickable { cursor: pointer; }
   .stat-card-clickable:hover, .stat-card-clickable:focus-visible { border-color: var(--brand); background: var(--soft-bg); }
@@ -188,6 +195,10 @@
   .score-tile-body { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
   .score-main { display: flex; flex-direction: column; align-items: center; }
   .score-bonus-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; border-top: 1px solid var(--score-divider); padding-top: 8px; width: 100%; justify-items: center; }
+  /* F3Go30 pax-detail Bonus tile: bonus list as its own stat-card, not stacked under Total
+     Score, so no divider/top-padding needed — see #pdBonusTile. */
+  .score-bonus-list.standalone { border-top: none; padding-top: 0; margin-top: 4px; }
+  #pdBonusTile .score-bonus-list { grid-template-columns: 1fr; }
   .bonus-type-row { display: flex; align-items: center; gap: 5px; }
   .bonus-type-code { font-family: monospace; font-weight: bold; font-size: 12px; padding: 1px 5px; border-radius: 3px; }
   .bonus-type-code.fe { background: var(--pill-fe-bg); color: var(--pill-fe-fg); }
@@ -273,6 +284,7 @@
     .stats-row { grid-template-columns: 1fr 1fr; gap: 8px; }
     .stat-card { padding: 10px; }
     .stat-card:nth-child(3) { grid-column: 1 / -1; }
+    #step-paxDetail .stat-card:nth-child(3) { grid-column: auto; }
     .stat-label { font-size: 12px; margin-bottom: 4px; }
     .stat-value { font-size: 27px; }
     .stat-sub { font-size: 12px; }
@@ -750,8 +762,13 @@
               <div class="stat-value" id="pdScore"></div>
               <div class="stat-sub" id="pdScoreSub"></div>
             </div>
-            <div class="score-bonus-list" id="pdBonuses"></div>
           </div>
+        </div>
+        <!-- F3Go30: bonus points pulled out of Total Score into their own tile — clicking it
+             opens the (self-only) add/edit Bonus Points view, same as the header bonus button. -->
+        <div class="stat-card stat-card-clickable" id="pdBonusTile" role="button" tabindex="0" title="Add/edit bonus points">
+          <div class="stat-label">BONUS</div>
+          <div class="score-bonus-list standalone" id="pdBonuses"></div>
         </div>
       </div>
 
@@ -842,7 +859,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.24";
+  var STATIC_BUILD_VERSION_ = "2.4.10.25";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1300,7 +1317,7 @@
     $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name]);
     $('moreBtn').classList.toggle('hidden', name !== 'dashboard');
     $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice' || name === 'paxDetail');
-    if (name === 'checkin' || name === 'dashboard') state.bonusReturnStep = name;
+    if (name === 'checkin' || name === 'dashboard' || name === 'paxDetail') state.bonusReturnStep = name;
   }
 
   /** F3Go30-ez8v: a known PAX who's registered for NEXT month but not the current one — offer the
@@ -1720,6 +1737,39 @@
       .join('');
   }
 
+  /** Builds the "Your Goals"/"Goals" toggle label + collapsible box markup shared by
+   * renderGoalsReminder_ (self, on the checkin page) and renderPaxDetailGoals_ (read-only,
+   * in the pax-detail popup) — label lives outside the box, styled to match the TODAY/YESTERDAY
+   * checkin-section-label, and clicking it expands/collapses `boxInnerHtml`. `open` is the
+   * caller's current expand/collapse state (self defaults collapsed, pax-detail defaults open —
+   * see goalsSelfOpen_/goalsPaxOpen_). `labelId`/`boxId` let each caller wire its own toggle
+   * handler without colliding with the other's ids. */
+  function goalsToggleHtml_(text, labelId, boxId, open, boxInnerHtml) {
+    return '<div class="checkin-section-label goals-toggle-label" id="' + labelId + '" role="button" tabindex="0" aria-expanded="' + open + '">' +
+        text + ' <span class="goals-toggle-icon" id="' + labelId + 'Icon">' + (open ? '&#9650;' : '&#9660;') + '</span>' +
+      '</div>' +
+      '<div class="goals-reminder' + (open ? '' : ' hidden') + '" id="' + boxId + '">' + boxInnerHtml + '</div>';
+  }
+
+  function wireGoalsToggle_(labelId, boxId, getOpen, setOpen) {
+    var label = $(labelId);
+    var toggle = function() {
+      var open = !getOpen();
+      setOpen(open);
+      label.setAttribute('aria-expanded', open);
+      $(labelId + 'Icon').innerHTML = open ? '&#9650;' : '&#9660;';
+      $(boxId).classList.toggle('hidden', !open);
+    };
+    label.addEventListener('click', toggle);
+    label.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  }
+
+  // Collapsed by default on the checkin page (self) — persists across re-renders within the
+  // session so re-loading the checkin step doesn't fight a choice the PAX just made.
+  var goalsSelfOpen_ = false;
+
   function renderGoalsReminder_(goals) {
     var el = $('goalsReminder');
     var rowsHtml = goalsRowsHtml_(goals);
@@ -1730,28 +1780,35 @@
     }
     // F3Go30-833s.9: a button, not an anchor — editing goals opens the in-page signup step
     // instead of navigating this document to the GAS signup page.
-    el.innerHTML = '<div class="goals-reminder">' +
-      '<div class="goals-reminder-head">' +
-        '<span class="goals-reminder-title">Your goals</span>' +
+    var boxInnerHtml = '<div class="goals-reminder-edit-row">' +
         '<button type="button" id="goalsEditBtn" class="bonus-edit-btn">Edit</button>' +
-      '</div>' + rowsHtml + '</div>';
+      '</div>' + rowsHtml;
+    el.innerHTML = goalsToggleHtml_('Your Goals', 'goalsToggleLabel', 'goalsReminderBox', goalsSelfOpen_, boxInnerHtml);
     el.classList.remove('hidden');
-    // Re-bound on every render — innerHTML above replaces the button element each time.
+    // Re-bound on every render — innerHTML above replaces these elements each time.
     $('goalsEditBtn').addEventListener('click', function() { openSignup_('current'); });
+    wireGoalsToggle_('goalsToggleLabel', 'goalsReminderBox',
+      function() { return goalsSelfOpen_; }, function(v) { goalsSelfOpen_ = v; });
   }
 
-  /** Renders another PAX's WHO/WHAT/HOW goals in the pax-detail popup — same markup as the
-   * self reminder (goalsRowsHtml_) minus the Edit button, since a PAX can't edit a teammate's
-   * signup. `goals === undefined` means the fetch is still in flight (no cached copy either) —
-   * render a "Loading…" placeholder. `goals === null` means the fetch settled empty/failed, or
-   * there's genuinely nothing to show — hide the block. */
+  // Open by default in the pax-detail popup — reset to true each time openPaxDetail_ opens a
+  // (possibly different) teammate; see there. Persists across the Loading→loaded re-render for
+  // the same teammate so a mid-fetch collapse isn't clobbered when the fetch lands.
+  var goalsPaxOpen_ = true;
+
+  /** Renders another PAX's WHO/WHAT/HOW goals in the pax-detail popup — same collapsible
+   * label+box shape as the self reminder (goalsToggleHtml_) minus the Edit button, since a PAX
+   * can't edit a teammate's signup. `goals === undefined` means the fetch is still in flight (no
+   * cached copy either) — render a "Loading…" placeholder. `goals === null` means the fetch
+   * settled empty/failed, or there's genuinely nothing to show — hide the block. */
   function renderPaxDetailGoals_(goals) {
     var el = $('paxDetailGoals');
     if (goals === undefined) {
-      el.innerHTML = '<div class="goals-reminder">' +
-        '<div class="goals-reminder-head"><span class="goals-reminder-title">Goals</span></div>' +
-        '<div class="goals-reminder-row">Loading…</div></div>';
+      el.innerHTML = goalsToggleHtml_('Goals', 'paxGoalsToggleLabel', 'paxGoalsBox', goalsPaxOpen_,
+        '<div class="goals-reminder-row">Loading…</div>');
       el.classList.remove('hidden');
+      wireGoalsToggle_('paxGoalsToggleLabel', 'paxGoalsBox',
+        function() { return goalsPaxOpen_; }, function(v) { goalsPaxOpen_ = v; });
       return;
     }
     var rowsHtml = goals && goalsRowsHtml_(goals);
@@ -1760,10 +1817,10 @@
       el.innerHTML = '';
       return;
     }
-    el.innerHTML = '<div class="goals-reminder">' +
-      '<div class="goals-reminder-head"><span class="goals-reminder-title">Goals</span></div>' +
-      rowsHtml + '</div>';
+    el.innerHTML = goalsToggleHtml_('Goals', 'paxGoalsToggleLabel', 'paxGoalsBox', goalsPaxOpen_, rowsHtml);
     el.classList.remove('hidden');
+    wireGoalsToggle_('paxGoalsToggleLabel', 'paxGoalsBox',
+      function() { return goalsPaxOpen_; }, function(v) { goalsPaxOpen_ = v; });
   }
 
   /** Shared `.bonus-entry` inner markup — one entry's type/date/message/counted-badge, used by
@@ -2864,6 +2921,7 @@
   function openPaxDetail_(list, idx, dayIndex, totalDays, todayIndex, yesterdayIndex) {
     var len = list.length;
     idx = ((idx % len) + len) % len;
+    goalsPaxOpen_ = true; // F3Go30: Goals defaults open each time a (possibly new) teammate is shown
     paxDetailNav_ = { list: list, idx: idx, dayIndex: dayIndex, totalDays: totalDays, todayIndex: todayIndex, yesterdayIndex: yesterdayIndex };
     var rawMember = list[idx];
     var view = memberViewForIndex_(rawMember, dayIndex, totalDays);
@@ -3437,12 +3495,20 @@
 
   $('bonusType').addEventListener('change', updateBonusLinkVisibility_);
 
-  $('bonusBtn').addEventListener('click', function() {
+  // Bonus editing is always self-scoped (loadBonusList_ reads state.f3Name — there's no
+  // teammate-editing endpoint), so both the header bonus button and the pax-detail Bonus tile
+  // (which may be showing a teammate) open this same self view.
+  function openBonusManage_() {
     hideApiError_();
     hideBonusSaveNotice_();
     closeBonusForm_();
     showStep('bonus');
     loadBonusList_();
+  }
+  $('bonusBtn').addEventListener('click', openBonusManage_);
+  $('pdBonusTile').addEventListener('click', openBonusManage_);
+  $('pdBonusTile').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBonusManage_(); }
   });
   $('bonusBackBtn').addEventListener('click', function() { showStep(state.bonusReturnStep); });
   $('paxDetailPrevBtn').addEventListener('click', function() { stepPaxDetail_(-1); });
