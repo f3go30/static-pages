@@ -214,7 +214,7 @@
   .board-row-main .bstatus { width: 20px; flex-shrink: 0; text-align: center; }
   .board-row-main .bpct { width: 30px; flex-shrink: 0; text-align: right; font-family: monospace; font-weight: bold; }
   .checkin-status-badge { margin-right: 3px; display: inline-block; }
-  .checkin-status-badge.done { font-size: 1.05em; line-height: 1; }
+  .checkin-status-badge.done { color: #3f8b75; font-weight: bold; font-size: 1.05em; line-height: 1; }
   .checkin-status-badge.urgent { color: var(--urgent); font-weight: bold; font-size: 1.15em; line-height: 1; }
   .board-row-bonuses { display: flex; gap: 3px; margin-top: 3px; padding-left: 4px; }
   .board-row-bonuses .bonus-type-code { font-size: 10px; padding: 0 4px; }
@@ -814,7 +814,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.19";
+  var STATIC_BUILD_VERSION_ = "2.4.10.20";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2635,7 +2635,7 @@
   }
 
   function checkinStatusBadgeHtml_(status) {
-    if (status === 'done') return '<span class="checkin-status-badge done" title="Checked in — all caught up">✅</span>';
+    if (status === 'done') return '<span class="checkin-status-badge done" title="Checked in — all caught up">✔️</span>';
     if (status === 'warning') return '<span class="checkin-status-badge warning" title="Yesterday not checked in yet">⚠️</span>';
     if (status === 'urgent') return '<span class="checkin-status-badge urgent" title="Yesterday not checked in">Ⓧ</span>';
     return '';
