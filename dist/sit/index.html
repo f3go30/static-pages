@@ -189,6 +189,9 @@
   .day-mini-bar { display: flex; gap: 1.5px; align-items: center; justify-content: center; flex: 1; min-width: 0; }
   .day-mini-cell { width: 6px; height: 12px; border-radius: 1px; flex-shrink: 0; }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+  /* F3Go30: the hit/miss/fail key under the rolling-average chart — a bare line under the chart
+     rather than its own boxed legend, so it shouldn't read as a separate labeled section. */
+  .legend-inline { justify-content: center; margin-top: 6px; }
   .legend-item { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-faint); }
   .legend-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
   .score-tile-body { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
@@ -243,7 +246,9 @@
   .checkin-status-badge.tip-open .badge-tip { opacity: 1; visibility: visible; }
   .board-row-bonuses { display: flex; gap: 3px; margin-top: 3px; padding-left: 4px; }
   .board-row-bonuses .bonus-type-code { font-size: 10px; padding: 0 4px; }
-  .chart-card { margin-top: 12px; }
+  /* F3Go30: the chart itself (and now the legend line under it) already reads as the bottom of
+     this card — the full 22px .card padding below that reads as dead space, so trim it back. */
+  .chart-card { margin-top: 12px; padding-bottom: 12px; }
   .section-label { font-size: 14px; font-weight: bold; letter-spacing: .16em; color: var(--brand); margin: 22px 0 4px; }
   .api-error-banner { background: var(--error-bg); border-bottom: 3px solid var(--error-border); color: var(--error-fg); padding: 12px 18px; font-size: 17px; line-height: 1.5; }
   .api-error-banner strong { display: block; margin-bottom: 2px; }
@@ -645,11 +650,6 @@
         <div class="stat-card stat-card-clickable" id="dMonthProgressTile" role="button" tabindex="0" title="Edit today's/yesterday's check-in">
           <div class="stat-label">MONTH PROGRESS</div>
           <div id="dMonthRing"></div>
-          <div class="legend" style="margin-top:8px;justify-content:center;">
-            <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
-          </div>
         </div>
         <div class="stat-card">
           <div class="stat-label">STREAK</div>
@@ -677,6 +677,13 @@
       <div class="card chart-card">
         <div class="section-label" style="margin-top:0;">7-DAY ROLLING AVERAGE</div>
         <div id="dAvgChart"></div>
+        <!-- F3Go30: hit/miss/fail color key, demoted from the Month Progress tile's own boxed
+             legend — a bare line, not a labeled block, to conserve vertical space. -->
+        <div class="legend legend-inline">
+          <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
+        </div>
       </div>
 
       <div class="section-label">MY TEAM &middot; <span id="dTeamName"></span></div>
@@ -747,11 +754,6 @@
           <div id="pdCheckinBadge"></div>
           <div class="stat-label">MONTH PROGRESS</div>
           <div id="pdMonthRing"></div>
-          <div class="legend" style="margin-top:8px;justify-content:center;">
-            <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
-            <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
-          </div>
         </div>
         <div class="stat-card">
           <div class="stat-label">STREAK</div>
@@ -779,6 +781,13 @@
       <div class="card chart-card">
         <div class="section-label" style="margin-top:0;">7-DAY ROLLING AVERAGE</div>
         <div id="pdAvgChart"></div>
+        <!-- F3Go30: hit/miss/fail color key, demoted from the Month Progress tile's own boxed
+             legend — a bare line, not a labeled block, to conserve vertical space. -->
+        <div class="legend legend-inline">
+          <div class="legend-item"><div class="legend-swatch" style="background:#3f8b75;"></div>Hits</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#f7b209;"></div>Misses</div>
+          <div class="legend-item"><div class="legend-swatch" style="background:#de521c;"></div>Fails</div>
+        </div>
       </div>
 
       <div id="paxDetailGoals" class="hidden"></div>
@@ -863,7 +872,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.26";
+  var STATIC_BUILD_VERSION_ = "2.4.10.27";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2641,7 +2650,10 @@
     return pct >= 80 ? '#3f8b75' : pct >= 50 ? '#f7b209' : '#de521c';
   }
 
-  var SEGMENT_COLORS_ = { done: '#3f8b75', missed: '#f7b209', absent: '#de521c', pending: '#d8cfbf', upcoming: '#e7e2d8' };
+  // F3Go30: 'pending' (unfilled/no-value-yet) was #d8cfbf — too close to 'upcoming' (#e7e2d8,
+  // future days not yet reachable) to read as a distinct state on the ring/chart. Darkened to
+  // a clearly separate warm gray.
+  var SEGMENT_COLORS_ = { done: '#3f8b75', missed: '#f7b209', absent: '#de521c', pending: '#9c9284', upcoming: '#e7e2d8' };
   var SEGMENT_VALUES_ = { done: 1, missed: 0, absent: -1 };
   var DISPLAY_WINDOW_DAYS_ = 14;
   var ROLLING_AVERAGE_WINDOW_DAYS_ = 7;
@@ -2680,7 +2692,7 @@
     var bg = bgColor ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + (size * 0.49) + '" fill="' + bgColor + '"></circle>' : '';
     var paths = '';
     for (var i = 0; i < total; i++) {
-      var color = SEGMENT_COLORS_[daySegments[i]] || '#d8cfbf';
+      var color = SEGMENT_COLORS_[daySegments[i]] || '#9c9284';
       var s0 = i * seg + gap / 2, s1 = (i + 1) * seg - gap / 2;
       if (s1 <= s0) s1 = s0 + 0.1;
       paths += '<path d="' + ringArcPath_(cx, cy, ro, ri, s0, s1) + '" fill="' + color + '"></path>';
@@ -2717,7 +2729,7 @@
     (daySegments || []).slice(0, currentDay).forEach(function(status) {
       var cell = document.createElement('div');
       cell.className = 'day-mini-cell';
-      cell.style.background = SEGMENT_COLORS_[status] || '#d8cfbf';
+      cell.style.background = SEGMENT_COLORS_[status] || '#9c9284';
       el.appendChild(cell);
     });
     return el;
@@ -2725,7 +2737,11 @@
 
   function buildAvgChartSvg_(rollingAverage, daySegments, currentDay) {
     if (!currentDay) return '<p class="muted" style="margin:0;">Not enough data yet.</p>';
-    var W = 600, H = 130, PADT = 12, PADB = 22, PADL = 28, PADR = 6;
+    // F3Go30: PADB used to leave room for x-axis day labels that were never drawn — trimmed
+    // from 22 to 10 (just enough for the "-1" label's descender) so the chart doesn't carry dead
+    // space below its bottom gridline; H shrinks by the same amount to keep the plot area (PH)
+    // unchanged.
+    var W = 600, H = 118, PADT = 12, PADB = 10, PADL = 28, PADR = 6;
     var PW = W - PADL - PADR, PH = H - PADT - PADB;
     var mapY = function(v) { return PADT + PH * (1 - (v + 1) / 2); };
     var xDenom = Math.max(currentDay - 1, 1);
@@ -2743,7 +2759,7 @@
                           // visible as a small bar straddling the line rather than invisible.
     for (var i = 0; i < currentDay; i++) {
       var status = daySegments[i];
-      var color = SEGMENT_COLORS_[status] || '#d8cfbf';
+      var color = SEGMENT_COLORS_[status] || '#9c9284';
       var v = SEGMENT_VALUES_[status] || 0;
       var x = mapX(i) - bw / 2, top = Math.min(zY, mapY(v)), ht = Math.abs(zY - mapY(v));
       if (ht < MIN_BAR_HT_) { top = zY - MIN_BAR_HT_ / 2; ht = MIN_BAR_HT_; }
