@@ -606,6 +606,10 @@
     </div>
 
     <div id="step-dashboard" class="hidden">
+      <div class="card-head-row">
+        <h2 style="margin:0;">Dashboard</h2>
+        <button class="secondary btn-inline" id="dashboardBackBtn">&larr; Back</button>
+      </div>
       <div class="date-nav">
         <button id="datePrevBtn" class="date-nav-btn" title="Previous day"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="date-nav-label" id="dateNavLabel">&nbsp;</div>
@@ -697,12 +701,14 @@
 
     <div id="step-paxDetail" class="hidden">
       <div class="card-head-row">
-        <h2 id="paxDetailName" style="margin:0;"></h2>
+        <button id="paxDetailPrevBtn" class="date-nav-btn" title="Previous teammate"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2 id="paxDetailName" style="margin:0;flex:1;text-align:center;"></h2>
+        <button id="paxDetailNextBtn" class="date-nav-btn" title="Next teammate"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+      <div class="card-head-row">
+        <div class="section-label" style="margin-top:0;" id="paxDetailTeam"></div>
         <button class="secondary btn-inline" id="paxDetailBackBtn">&larr; Back</button>
       </div>
-      <div class="section-label" style="margin-top:0;" id="paxDetailTeam"></div>
-
-      <div id="paxDetailGoals" class="hidden"></div>
 
       <div class="stats-row">
         <div class="stat-card">
@@ -735,6 +741,8 @@
         <div class="section-label" style="margin-top:0;">7-DAY ROLLING AVERAGE</div>
         <div id="pdAvgChart"></div>
       </div>
+
+      <div id="paxDetailGoals" class="hidden"></div>
     </div>
 
     <div id="step-bonus" class="hidden">
@@ -814,7 +822,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.20";
+  var STATIC_BUILD_VERSION_ = "2.4.10.21";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2635,7 +2643,9 @@
   }
 
   function checkinStatusBadgeHtml_(status) {
-    if (status === 'done') return '<span class="checkin-status-badge done" title="Checked in — all caught up">✔️</span>';
+    // Plain U+2713 (no emoji variation selector) — unlike ✅/✔️ it carries no built-in color, so
+    // the .done CSS color rule actually applies.
+    if (status === 'done') return '<span class="checkin-status-badge done" title="Checked in — all caught up">&#10003;</span>';
     if (status === 'warning') return '<span class="checkin-status-badge warning" title="Yesterday not checked in yet">⚠️</span>';
     if (status === 'urgent') return '<span class="checkin-status-badge urgent" title="Yesterday not checked in">Ⓧ</span>';
     return '';
@@ -2712,19 +2722,40 @@
     $('pdAvgChart').innerHTML = buildAvgChartSvg_(winRollingAverage, winDaySegments, winDaySegments.length);
   }
 
+  // Tracks the list (raw members — either d.myTeam or one paxBoard group's members) and index
+  // the pax-detail popup is currently showing, so paxDetailPrevBtn/paxDetailNextBtn can step
+  // through it and loop at the ends. Null while the popup isn't open / between dashboard loads.
+  var paxDetailNav_ = null;
+
   /** Opens the pax-detail popup for a clicked team-tile/board-row, and kicks off the goals
    * fetch (paxGoals action, dashboardWebapp.js) in the background — the tiles render instantly
    * from data already in the dashboard payload, goals fill in a moment later once the request
-   * lands. Back (paxDetailBackBtn) just returns to 'dashboard' (see showStep) — the dashboard's
-   * own DOM was never torn down, so scroll position and content are exactly as left. */
-  function openPaxDetail_(view, currentDay) {
+   * lands. Back (paxDetailBackBtn) always returns to 'dashboard' (see showStep) — the
+   * dashboard's own DOM was never torn down, so scroll position and content are exactly as
+   * left. `list`/`idx` are the raw-member array the tile/row came from and this PAX's position
+   * in it (F3Go30 pax-detail prev/next) — prevPaxDetail_/nextPaxDetail_ loop within that same
+   * list, wrapping at either end. */
+  function openPaxDetail_(list, idx, dayIndex, totalDays) {
+    var len = list.length;
+    idx = ((idx % len) + len) % len;
+    paxDetailNav_ = { list: list, idx: idx, dayIndex: dayIndex, totalDays: totalDays };
+    var rawMember = list[idx];
+    var view = memberViewForIndex_(rawMember, dayIndex, totalDays);
+    var currentDay = dayIndex + 1;
     renderPaxDetail_(view, currentDay);
+    $('paxDetailPrevBtn').classList.toggle('hidden', len < 2);
+    $('paxDetailNextBtn').classList.toggle('hidden', len < 2);
     renderPaxDetailGoals_(undefined);
     showStep('paxDetail');
     var dateISO = state.viewDate ? isoDate_(state.viewDate) : isoDate_(new Date());
     callApi('paxGoals', { f3Name: view.name, dateISO: dateISO, resolvedContext: state.resolvedContext })
       .then(function(res) { renderPaxDetailGoals_(res && res.ok ? res.goals : null); })
       .catch(function() { renderPaxDetailGoals_(null); });
+  }
+
+  function stepPaxDetail_(delta) {
+    if (!paxDetailNav_) return;
+    openPaxDetail_(paxDetailNav_.list, paxDetailNav_.idx + delta, paxDetailNav_.dayIndex, paxDetailNav_.totalDays);
   }
 
   function trimTrailingBlanks_(values) {
@@ -2952,13 +2983,14 @@
     yesterdayReal.setDate(yesterdayReal.getDate() - 1);
     var yesterdayIndex = findDayIndex_(d.dayDates, isoDate_(yesterdayReal));
 
+    var myTeamList = d.myTeam || [];
     var myTeamEl = $('dMyTeam');
     myTeamEl.innerHTML = '';
-    (d.myTeam || []).forEach(function(m) {
+    myTeamList.forEach(function(m, idx) {
       var view = memberViewForIndex_(m, dayIndex, d.totalDays);
       var checkinStatus = yesterdayCheckinStatus_(m, yesterdayIndex);
       var tileEl = renderTeamTile_(view, m.name === d.f3Name, currentDay, checkinStatus);
-      tileEl.addEventListener('click', function() { openPaxDetail_(view, currentDay); });
+      tileEl.addEventListener('click', function() { openPaxDetail_(myTeamList, idx, dayIndex, d.totalDays); });
       myTeamEl.appendChild(tileEl);
     });
 
@@ -2973,12 +3005,13 @@
       groupEl.appendChild(head);
       var rowsEl = document.createElement('div');
       rowsEl.className = 'board-rows';
-      group.members.forEach(function(rawMember) {
+      var groupMembers = group.members || [];
+      groupMembers.forEach(function(rawMember, idx) {
         var m = memberViewForIndex_(rawMember, dayIndex, d.totalDays);
         var checkinStatus = yesterdayCheckinStatus_(rawMember, yesterdayIndex);
         var row = document.createElement('div');
         row.className = 'board-row' + (m.name === d.f3Name ? ' me' : '');
-        row.addEventListener('click', function() { openPaxDetail_(m, currentDay); });
+        row.addEventListener('click', function() { openPaxDetail_(groupMembers, idx, dayIndex, d.totalDays); });
         var mainEl = document.createElement('div');
         mainEl.className = 'board-row-main';
         var nameEl = document.createElement('span');
@@ -3280,6 +3313,9 @@
   });
   $('bonusBackBtn').addEventListener('click', function() { showStep(state.bonusReturnStep); });
   $('paxDetailBackBtn').addEventListener('click', function() { showStep('dashboard'); });
+  $('paxDetailPrevBtn').addEventListener('click', function() { stepPaxDetail_(-1); });
+  $('paxDetailNextBtn').addEventListener('click', function() { stepPaxDetail_(1); });
+  $('dashboardBackBtn').addEventListener('click', function() { showStep('checkin'); });
   $('bonusAddBtn').addEventListener('click', function() { openBonusForm_(null); });
   $('bonusCancelBtn').addEventListener('click', closeBonusForm_);
 
