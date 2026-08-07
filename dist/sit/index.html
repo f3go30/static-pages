@@ -214,6 +214,7 @@
   .board-row-main .bstatus { width: 20px; flex-shrink: 0; text-align: center; }
   .board-row-main .bpct { width: 30px; flex-shrink: 0; text-align: right; font-family: monospace; font-weight: bold; }
   .checkin-status-badge { margin-right: 3px; display: inline-block; }
+  .checkin-status-badge.done { font-size: 1.05em; line-height: 1; }
   .checkin-status-badge.urgent { color: var(--urgent); font-weight: bold; font-size: 1.15em; line-height: 1; }
   .board-row-bonuses { display: flex; gap: 3px; margin-top: 3px; padding-left: 4px; }
   .board-row-bonuses .bonus-type-code { font-size: 10px; padding: 0 4px; }
@@ -813,7 +814,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.18";
+  var STATIC_BUILD_VERSION_ = "2.4.10.19";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1700,8 +1701,17 @@
    * self reminder (goalsRowsHtml_) minus the Edit button, since a PAX can't edit a teammate's
    * signup. Hides the block entirely when the fetch is still pending, failed, or came back
    * with nothing to show. */
+  /** `goals === undefined` means the fetch is still in flight — render a "Loading…" placeholder.
+   * `goals === null` means the fetch settled (empty/failed) — hide the block, as before. */
   function renderPaxDetailGoals_(goals) {
     var el = $('paxDetailGoals');
+    if (goals === undefined) {
+      el.innerHTML = '<div class="goals-reminder">' +
+        '<div class="goals-reminder-head"><span class="goals-reminder-title">Goals</span></div>' +
+        '<div class="goals-reminder-row">Loading…</div></div>';
+      el.classList.remove('hidden');
+      return;
+    }
     var rowsHtml = goals && goalsRowsHtml_(goals);
     if (!rowsHtml) {
       el.classList.add('hidden');
@@ -2617,11 +2627,15 @@
   function yesterdayCheckinStatus_(rawMember, yesterdayIndex) {
     if (yesterdayIndex < 0) return null;
     var v = (rawMember.dayValues || [])[yesterdayIndex];
-    if (v === 1 || v === 0 || v === -1) return null;
+    // 1/0 = PAX actually submitted a checkin (hit/miss) — caught up, show the green check.
+    // -1 = nightly auto-mark after no response; the window already closed, nothing left to flag.
+    if (v === 1 || v === 0) return 'done';
+    if (v === -1) return null;
     return new Date().getHours() < YESTERDAY_CHECKIN_WARNING_HOUR_ ? 'warning' : 'urgent';
   }
 
   function checkinStatusBadgeHtml_(status) {
+    if (status === 'done') return '<span class="checkin-status-badge done" title="Checked in — all caught up">✅</span>';
     if (status === 'warning') return '<span class="checkin-status-badge warning" title="Yesterday not checked in yet">⚠️</span>';
     if (status === 'urgent') return '<span class="checkin-status-badge urgent" title="Yesterday not checked in">Ⓧ</span>';
     return '';
@@ -2705,7 +2719,7 @@
    * own DOM was never torn down, so scroll position and content are exactly as left. */
   function openPaxDetail_(view, currentDay) {
     renderPaxDetail_(view, currentDay);
-    renderPaxDetailGoals_(null);
+    renderPaxDetailGoals_(undefined);
     showStep('paxDetail');
     var dateISO = state.viewDate ? isoDate_(state.viewDate) : isoDate_(new Date());
     callApi('paxGoals', { f3Name: view.name, dateISO: dateISO, resolvedContext: state.resolvedContext })
