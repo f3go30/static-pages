@@ -163,13 +163,13 @@
   .checkin-status { font-size: 15px; color: var(--text-faint); margin: -2px 0 8px; }
   .checkin-status.status-warn { color: var(--warn-fg); font-weight: bold; }
   .checkin-status.status-late { color: var(--danger); font-weight: bold; }
-  .checkin-section-label { font-size: 14px; font-weight: bold; letter-spacing: .16em; color: var(--brand); margin: 18px 0 8px; }
+  .checkin-section-label { font-size: 14px; font-weight: bold; letter-spacing: .16em; color: var(--brand); margin: 18px 0 8px; text-transform: uppercase; }
   .goals-reminder { background: var(--soft-bg); border: 1px solid var(--soft-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; }
   .goals-reminder-edit-row { display: flex; justify-content: flex-end; margin-bottom: 4px; }
   /* F3Go30: "Your Goals"/"Goals" label promoted out of the box to match the TODAY/YESTERDAY
      section-label style (checkin-section-label) — clicking it expands/collapses the box below. */
   .goals-toggle-label { cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; }
-  .goals-toggle-icon { font-size: 11px; }
+  .goals-toggle-icon { font-size: 16px; font-weight: bold; color: var(--brand); }
   .goals-reminder-row { font-size: 15px; line-height: 1.4; margin: 3px 0; }
   .goals-reminder-row strong { color: var(--brand); }
   .error-text { font-size: 16px; color: var(--danger); margin-bottom: 8px; }
@@ -872,7 +872,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.30";
+  var STATIC_BUILD_VERSION_ = "2.4.10.31";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
