@@ -285,7 +285,8 @@
   .card-head-row h2 { margin: 0; white-space: nowrap; }
   .btn-inline { width: auto; margin: 0; padding: 8px 14px; flex-shrink: 0; }
   @media (max-width: 480px) {
-    .stats-row { gap: 8px; }
+    .header { padding: 12px; }
+    .stats-row { gap: 8px; margin-top: 18px; }
     .stat-card { padding: 10px; }
     .stat-label { font-size: 12px; margin-bottom: 4px; }
     .stat-value { font-size: 27px; }
@@ -799,10 +800,7 @@
 
     <div id="step-bonus" class="hidden">
       <div class="card">
-        <div class="card-head-row">
-          <h2>Bonus Points</h2>
-          <button class="secondary btn-inline" id="bonusBackBtn">&larr; Back</button>
-        </div>
+        <h2>Bonus Points</h2>
         <div class="section-label" id="bonusMonthLabel" style="margin-top:0;"></div>
         <p class="muted">Log EHing an FNG, Fellowship, a Q, or an Inspire moment. EHing FNG, Q
           Point, and Inspire need a link to Slack as evidence before they count.</p>
@@ -874,7 +872,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.29";
+  var STATIC_BUILD_VERSION_ = "2.4.10.30";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1321,7 +1319,7 @@
 
   // Steps whose Back now lives in the persistent header (headerBackBtn) instead of a per-card
   // button, keyed to their fixed destination step. 'bonus' isn't listed here — its Back target
-  // is dynamic (state.bonusReturnStep, set below) and stays on bonusBackBtn.
+  // is dynamic (state.bonusReturnStep, set below); headerBackBtn's click handler special-cases it.
   var HEADER_BACK_TARGET_ = { dashboard: 'checkin', paxDetail: 'dashboard' };
 
   function showStep(name) {
@@ -1329,7 +1327,7 @@
       $('step-' + s).classList.toggle('hidden', s !== name);
     });
     state.currentStep = name;
-    $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name]);
+    $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name] && name !== 'bonus');
     $('moreBtn').classList.toggle('hidden', name !== 'dashboard');
     $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice' || name === 'paxDetail');
     if (name === 'checkin' || name === 'dashboard') state.bonusReturnStep = name;
@@ -3533,10 +3531,10 @@
   $('dBonusTile').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBonusManage_(); }
   });
-  $('bonusBackBtn').addEventListener('click', function() { showStep(state.bonusReturnStep); });
   $('paxDetailPrevBtn').addEventListener('click', function() { stepPaxDetail_(-1); });
   $('paxDetailNextBtn').addEventListener('click', function() { stepPaxDetail_(1); });
   $('headerBackBtn').addEventListener('click', function() {
+    if (state.currentStep === 'bonus') { showStep(state.bonusReturnStep); return; }
     var target = HEADER_BACK_TARGET_[state.currentStep];
     if (target) showStep(target);
   });
