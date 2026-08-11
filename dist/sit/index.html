@@ -271,8 +271,18 @@
   .announce-overlay.hidden { display: none; }
   .announce-modal { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 22px; box-shadow: 0 8px 30px var(--shadow); max-width: 420px; width: 100%; }
   .announce-modal h2 { margin: 0 0 10px; font-size: 19px; color: var(--brand); }
-  .announce-modal p { margin: 0 0 18px; font-size: 16px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+  .announce-modal p { margin: 0 0 10px; font-size: 16px; line-height: 1.4; color: var(--text); white-space: pre-wrap; }
   .announce-modal p a { color: var(--brand); }
+  /* The body is admin-authored HTML (F3Go30-g9bi follow-up) — a Site Q writing plain <p>/<ul>
+     blocks (e.g. pasted from a doc) must not get browser-default UA-stylesheet spacing stacked
+     on top of the p rule above (Chrome's default ul margin is ~1em, li has line-height-driven
+     gaps) — that reads as a wall of vertical whitespace between short lines. Tightened + the
+     modal's own trailing element loses its bottom margin so it doesn't leave a gap before the
+     action buttons. */
+  .announce-modal ul, .announce-modal ol { margin: 0 0 10px; padding-left: 20px; }
+  .announce-modal li { margin: 0 0 4px; line-height: 1.4; }
+  .announce-modal li:last-child { margin-bottom: 0; }
+  #announcementText > :last-child { margin-bottom: 0; }
   .announce-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
   .announce-modal-actions button { font-family: inherit; font-size: 14px; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
   #announcementRemindLaterBtn { background: none; border: 1px solid var(--border); color: var(--text); }
@@ -416,7 +426,7 @@
   <div id="announcementModal" class="announce-overlay hidden">
     <div class="announce-modal">
       <h2 id="announcementTitle"></h2>
-      <p id="announcementText"></p>
+      <div id="announcementText"></div>
       <div class="announce-modal-actions">
         <button id="announcementRemindLaterBtn" type="button">Remind me later</button>
         <button id="announcementDismissBtn" type="button">Got it</button>
@@ -905,7 +915,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.36";
+  var STATIC_BUILD_VERSION_ = "2.4.10.37";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
