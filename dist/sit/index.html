@@ -262,6 +262,13 @@
   .page-banner button { background: none; border: none; color: var(--warn-fg); text-decoration: underline; cursor: pointer; font-size: 14px; padding: 0; font-family: inherit; flex-shrink: 0; }
   .page-banner-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
   .announce-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 1000; }
+  /* F3Go30-g9bi live-verify fix: .hidden{display:none} (declared earlier in this stylesheet) and
+     .announce-overlay{display:flex} above are both single-class selectors of equal specificity,
+     so source order alone decided the winner — .announce-overlay came later and always won,
+     leaving the overlay visible (and blocking clicks on the page underneath) even with the
+     hidden class applied. This two-class selector outranks both on specificity and always wins
+     regardless of declaration order. */
+  .announce-overlay.hidden { display: none; }
   .announce-modal { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 22px; box-shadow: 0 8px 30px var(--shadow); max-width: 420px; width: 100%; }
   .announce-modal p { margin: 0 0 18px; font-size: 16px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
   .announce-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
@@ -895,7 +902,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.33";
+  var STATIC_BUILD_VERSION_ = "2.4.10.34";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
