@@ -905,7 +905,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.35";
+  var STATIC_BUILD_VERSION_ = "2.4.10.36";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1319,33 +1319,54 @@
   var updateBanner_ = makeDismissibleBanner_('updateBanner', 'updateDismissBtn', 'go30UpdateDismissed');
   $('updateReloadBtn').addEventListener('click', function() { location.reload(); });
 
-  /** F3Go30-g9bi: the announcement splash's own dismissal is value-keyed on the announcement's
-   * day (mirrors makeDismissibleBanner_'s value-keyed pattern above), NOT built on top of it —
-   * this modal also needs a "Remind me later" snooze makeDismissibleBanner_ has no notion of, so
-   * it gets its own small wiring instead of stretching that helper's shape to fit. "Remind me
-   * later" deliberately uses sessionStorage (not localStorage) so it never outlives the browser
-   * tab/session, and on wake it must re-check whatever config.announcement is passed in live at
-   * that moment (never a value captured at click-time) — it may have changed or cleared since. */
+  /** F3Go30-g9bi: the announcement splash's own dismissal is value-keyed (mirrors
+   * makeDismissibleBanner_'s value-keyed pattern above), NOT built on top of it — this modal also
+   * needs a "Remind me later" snooze makeDismissibleBanner_ has no notion of, so it gets its own
+   * small wiring instead of stretching that helper's shape to fit. "Remind me later" deliberately
+   * uses sessionStorage (not localStorage) so it never outlives the browser tab/session, and on
+   * wake it must re-check whatever config.announcement is passed in live at that moment (never a
+   * value captured at click-time) — it may have changed or cleared since.
+   *
+   * The dismissal/snooze key is a fingerprint of {day, title, message} — day ALONE (the original
+   * shape) meant a Site Q editing an already-dismissed day's message on the same day left it
+   * permanently suppressed for anyone who'd already dismissed it, with no way to re-surface the
+   * edit short of the day rolling over. Content is part of the identity now, exactly like
+   * updateBanner_ keys its own dismissal on the server VERSION string, not just "an update
+   * happened" — a changed announcement is a different notice. */
   var ANNOUNCE_DISMISS_KEY_ = 'go30AnnouncementDismissed';
   var ANNOUNCE_REMIND_WAKE_KEY_ = 'go30AnnouncementRemindWakeAt';
   var ANNOUNCE_REMIND_DELAY_MS_ = 30 * 60 * 1000;
-  var announceModalShownDay_ = null;
+  var announceModalShownFingerprint_ = null;
 
-  function announceDismissed_(day) {
-    try { return localStorage.getItem(ANNOUNCE_DISMISS_KEY_) === String(day); } catch (e) { return false; }
+  // Not a security hash — only needs to change when the content does, so localStorage/
+  // sessionStorage don't have to carry the full (possibly long, HTML-bearing) message text.
+  function announceFingerprint_(announcement) {
+    var raw = announcement.day + ' ' + (announcement.title || '') + ' ' + (announcement.message || '');
+    var h = 0;
+    for (var i = 0; i < raw.length; i++) { h = (h * 31 + raw.charCodeAt(i)) | 0; }
+    return announcement.day + ':' + h.toString(36);
   }
-  function announceSnoozed_() {
+  function announceDismissed_(fingerprint) {
+    try { return localStorage.getItem(ANNOUNCE_DISMISS_KEY_) === fingerprint; } catch (e) { return false; }
+  }
+  function announceSnoozed_(fingerprint) {
     try {
-      var wakeAt = Number(sessionStorage.getItem(ANNOUNCE_REMIND_WAKE_KEY_));
-      return !!wakeAt && Date.now() < wakeAt;
+      var stored = sessionStorage.getItem(ANNOUNCE_REMIND_WAKE_KEY_);
+      if (!stored) return false;
+      var sep = stored.indexOf('|');
+      var wakeAt = Number(sep === -1 ? stored : stored.slice(0, sep));
+      var snoozedFingerprint = sep === -1 ? null : stored.slice(sep + 1);
+      // A snooze recorded against a DIFFERENT (older) fingerprint must not suppress a
+      // subsequently-edited announcement, even if the wake-time hasn't passed yet.
+      return !!wakeAt && Date.now() < wakeAt && snoozedFingerprint === fingerprint;
     } catch (e) { return false; }
   }
   function hideAnnouncementModal_() {
-    announceModalShownDay_ = null;
+    announceModalShownFingerprint_ = null;
     $('announcementModal').classList.add('hidden');
   }
   function showAnnouncementModal_(announcement) {
-    announceModalShownDay_ = announcement.day;
+    announceModalShownFingerprint_ = announceFingerprint_(announcement);
     $('announcementTitle').textContent = announcement.title;
     // innerHTML, deliberately — the body may carry links/formatting (F3Go30-g9bi follow-up).
     // Safe here specifically because this text originates ONLY from the Config sheet, which is
@@ -1361,20 +1382,25 @@
    * identify/dashboard/resume-refresh, mirroring applyVersionState_/updateBanner_'s
    * show-if-applicable/else-hide shape above. */
   function applyAnnouncementState_(announcement) {
-    if (announcement && !announceDismissed_(announcement.day) && !announceSnoozed_()) {
+    var fingerprint = announcement ? announceFingerprint_(announcement) : null;
+    if (announcement && !announceDismissed_(fingerprint) && !announceSnoozed_(fingerprint)) {
       showAnnouncementModal_(announcement);
     } else {
       hideAnnouncementModal_();
     }
   }
   $('announcementDismissBtn').addEventListener('click', function() {
-    if (announceModalShownDay_ != null) {
-      try { localStorage.setItem(ANNOUNCE_DISMISS_KEY_, String(announceModalShownDay_)); } catch (e) { /* not fatal */ }
+    if (announceModalShownFingerprint_ != null) {
+      try { localStorage.setItem(ANNOUNCE_DISMISS_KEY_, announceModalShownFingerprint_); } catch (e) { /* not fatal */ }
     }
     hideAnnouncementModal_();
   });
   $('announcementRemindLaterBtn').addEventListener('click', function() {
-    try { sessionStorage.setItem(ANNOUNCE_REMIND_WAKE_KEY_, String(Date.now() + ANNOUNCE_REMIND_DELAY_MS_)); } catch (e) { /* not fatal */ }
+    if (announceModalShownFingerprint_ != null) {
+      try {
+        sessionStorage.setItem(ANNOUNCE_REMIND_WAKE_KEY_, (Date.now() + ANNOUNCE_REMIND_DELAY_MS_) + '|' + announceModalShownFingerprint_);
+      } catch (e) { /* not fatal */ }
+    }
     hideAnnouncementModal_();
   });
 
