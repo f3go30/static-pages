@@ -261,6 +261,13 @@
   .page-banner-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .page-banner button { background: none; border: none; color: var(--warn-fg); text-decoration: underline; cursor: pointer; font-size: 14px; padding: 0; font-family: inherit; flex-shrink: 0; }
   .page-banner-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  .announce-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 1000; }
+  .announce-modal { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 22px; box-shadow: 0 8px 30px var(--shadow); max-width: 420px; width: 100%; }
+  .announce-modal p { margin: 0 0 18px; font-size: 16px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+  .announce-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  .announce-modal-actions button { font-family: inherit; font-size: 14px; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+  #announcementRemindLaterBtn { background: none; border: 1px solid var(--border); color: var(--text); }
+  #announcementDismissBtn { background: var(--brand); border: 1px solid var(--brand); color: #fff; }
   .date-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
   .date-nav-btn { width: 44px; height: 44px; border-radius: 8px; border: 2px solid var(--brand); background: var(--card-bg); color: var(--brand); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
   .date-nav-btn svg { width: 20px; height: 20px; display: block; }
@@ -388,6 +395,22 @@
         <button id="updateReloadBtn" type="button">Reload</button>
         <button id="updateDismissBtn" type="button">Not now</button>
       </span>
+    </div>
+  </div>
+
+  <!-- F3Go30-g9bi: Config-driven daily notice ("HC moved to Saturday", month-end reminder), see
+       applyAnnouncementState_ below. Server-computed validity window (checkinClientConfig_dw_'s
+       Announce.<day>/day+3), client-only dismissal for V1. Blocking (unlike gasMovedBanner/
+       updateBanner above) — but only ever shown in response to a live config.announcement, so a
+       Config-lookup failure on the server (best-effort there) simply never raises it; it can
+       never gate the check-in path underneath. -->
+  <div id="announcementModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <p id="announcementText"></p>
+      <div class="announce-modal-actions">
+        <button id="announcementRemindLaterBtn" type="button">Remind me later</button>
+        <button id="announcementDismissBtn" type="button">Got it</button>
+      </div>
     </div>
   </div>
 
@@ -872,7 +895,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.32";
+  var STATIC_BUILD_VERSION_ = "2.4.10.33";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1286,6 +1309,59 @@
   var updateBanner_ = makeDismissibleBanner_('updateBanner', 'updateDismissBtn', 'go30UpdateDismissed');
   $('updateReloadBtn').addEventListener('click', function() { location.reload(); });
 
+  /** F3Go30-g9bi: the announcement splash's own dismissal is value-keyed on the announcement's
+   * day (mirrors makeDismissibleBanner_'s value-keyed pattern above), NOT built on top of it —
+   * this modal also needs a "Remind me later" snooze makeDismissibleBanner_ has no notion of, so
+   * it gets its own small wiring instead of stretching that helper's shape to fit. "Remind me
+   * later" deliberately uses sessionStorage (not localStorage) so it never outlives the browser
+   * tab/session, and on wake it must re-check whatever config.announcement is passed in live at
+   * that moment (never a value captured at click-time) — it may have changed or cleared since. */
+  var ANNOUNCE_DISMISS_KEY_ = 'go30AnnouncementDismissed';
+  var ANNOUNCE_REMIND_WAKE_KEY_ = 'go30AnnouncementRemindWakeAt';
+  var ANNOUNCE_REMIND_DELAY_MS_ = 30 * 60 * 1000;
+  var announceModalShownDay_ = null;
+
+  function announceDismissed_(day) {
+    try { return localStorage.getItem(ANNOUNCE_DISMISS_KEY_) === String(day); } catch (e) { return false; }
+  }
+  function announceSnoozed_() {
+    try {
+      var wakeAt = Number(sessionStorage.getItem(ANNOUNCE_REMIND_WAKE_KEY_));
+      return !!wakeAt && Date.now() < wakeAt;
+    } catch (e) { return false; }
+  }
+  function hideAnnouncementModal_() {
+    announceModalShownDay_ = null;
+    $('announcementModal').classList.add('hidden');
+  }
+  function showAnnouncementModal_(announcement) {
+    announceModalShownDay_ = announcement.day;
+    $('announcementText').textContent = announcement.message;
+    $('announcementModal').classList.remove('hidden');
+  }
+  /** Called from applyServerConfig_ on every LIVE config response — shows or hides
+   * UNCONDITIONALLY (never just gates showing) so an admin clearing an announcement, or it
+   * simply expiring server-side, actively closes an already-open splash on the PAX's next
+   * identify/dashboard/resume-refresh, mirroring applyVersionState_/updateBanner_'s
+   * show-if-applicable/else-hide shape above. */
+  function applyAnnouncementState_(announcement) {
+    if (announcement && !announceDismissed_(announcement.day) && !announceSnoozed_()) {
+      showAnnouncementModal_(announcement);
+    } else {
+      hideAnnouncementModal_();
+    }
+  }
+  $('announcementDismissBtn').addEventListener('click', function() {
+    if (announceModalShownDay_ != null) {
+      try { localStorage.setItem(ANNOUNCE_DISMISS_KEY_, String(announceModalShownDay_)); } catch (e) { /* not fatal */ }
+    }
+    hideAnnouncementModal_();
+  });
+  $('announcementRemindLaterBtn').addEventListener('click', function() {
+    try { sessionStorage.setItem(ANNOUNCE_REMIND_WAKE_KEY_, String(Date.now() + ANNOUNCE_REMIND_DELAY_MS_)); } catch (e) { /* not fatal */ }
+    hideAnnouncementModal_();
+  });
+
   /** True when this document is a BUILT client running a different version than the server
    * reports. A null clientBuild means unbuilt src/ served directly (local dev + Playwright) —
    * there is no build to be behind, so that is never staleness. */
@@ -1405,8 +1481,16 @@
 
   /** Applies the site-config values from an identify response's `config` field — the static
    * counterpart of GAS's server-templated bootstrap (see CheckinApp.html's equivalent vars).
-   * Idempotent: harmless to call again on every subsequent identify response. */
-  function applyServerConfig_(cfg) {
+   * Idempotent: harmless to call again on every subsequent identify response.
+   * @param {boolean=} isLive Defaults true. F3Go30-g9bi: the announcement splash must NEVER
+   *   paint off the cached/replayed instant-paint snapshot (loadCheckinSnapshot_) — only off a
+   *   live response — to avoid flashing a stale, expired, or already-cleared announcement before
+   *   the live identify lands (same staleness class the snapshot code already handles for
+   *   todayStatus/yesterdayStatus, F3Go30-833s.17). The snapshot-replay call site passes false;
+   *   every other call site (typed identify, live token identify, silentResumeRefresh_) is live
+   *   by default. Every other field here is safe to paint from a snapshot as before — only the
+   *   announcement gate is isLive-conditional. */
+  function applyServerConfig_(cfg, isLive) {
     if (!cfg) return;
     APP_VERSION = cfg.appVersion;
     BONUS_TYPE_RULES_ = cfg.bonusTypeRules || {};
@@ -1434,6 +1518,7 @@
     // painting cfg.appVersion into the footer used to make a stale client look current. The
     // client's own build stays on display; a mismatch raises the reload prompt instead.
     applyVersionState_(STATIC_BUILD_VERSION_, APP_VERSION);
+    if (isLive !== false) applyAnnouncementState_(cfg.announcement || null);
   }
 
   // ── Step: identify ────────────────────────────────────────────────────
@@ -1663,7 +1748,7 @@
       // the blocking "Signing you in..." spinner. firstUse/emailMismatch are one-shot/security
       // fields that must only ever come from a live response, so they're forced false here.
       paintedFromSnapshot_ = true;
-      if (checkinSnapshot_.config) applyServerConfig_(checkinSnapshot_.config);
+      if (checkinSnapshot_.config) applyServerConfig_(checkinSnapshot_.config, false);
       applyIdentifySuccess_(Object.assign({}, checkinSnapshot_, { firstUse: false, emailMismatch: false }));
     } else {
       $('step-identify').classList.add('hidden');
