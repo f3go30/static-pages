@@ -167,7 +167,15 @@
   .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: var(--text-secondary); margin-left: 6px; }
   .field-block { margin: 18px 0; }
   .field-row { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; }
-  .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; flex: 0 0 auto; }
+  /* The display text is the first child of every .field-row (h1#titleDisplay, p#footerDisplay,
+     etc.) — flex:1 1 auto plus min-width:0 lets it actually shrink/wrap inside the row instead
+     of pushing past the pencil button. */
+  .field-row > :first-child { flex: 1 1 auto; min-width: 0; }
+  /* width: auto overrides the generic `button { width: 100%; }` rule below — that rule wins the
+     cascade for the "width" property on any <button> whose own rule doesn't set one, which
+     .pencil-btn didn't; combined with flex:0 0 auto that made it claim the row's full width and
+     crush the display text next to it down to nothing. */
+  .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; width: auto; flex: 0 0 auto; }
   .field-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
   .field-help { margin: 0 0 10px; color: var(--text-secondary); font-size: 0.9em; }
   .field-panel-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -192,7 +200,9 @@
   #topicList .topic-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: normal; }
   .topic-text.has-details { cursor: pointer; }
   .topic-text.has-details, .info-toggle, .topic-info-content { touch-action: manipulation; }
-  .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; }
+  /* Same width:auto fix as .pencil-btn above — .info-toggle is a <button> too and would
+     otherwise inherit width:100% and blow out its grid cell in .topic-row. */
+  .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; width: auto; }
   .topic-info-content { margin-top: 4px; padding-left: 34px; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
   .topic-info-content.empty { font-style: italic; color: var(--text-muted); }
   .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.9em; }
@@ -270,7 +280,7 @@
           <button type="button" class="pencil-btn" id="descriptionEditBtn" aria-label="Edit Description">✏️</button>
         </div>
         <div class="field-panel hidden" id="descriptionPanel">
-          <p class="field-help">Shown on the landing page, before a respondent enters their name.</p>
+          <p class="field-help">Shown on the landing page, before a respondent enters their name. Include any "how to start" guidance here too — there's no separate fixed instruction text below it anymore.</p>
           <label for="descriptionInput">Description</label>
           <textarea id="descriptionInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -282,8 +292,6 @@
       </div>
 
       <div class="fixed-block">
-        <p class="sub">Enter your name to start or resume ranking.</p>
-        <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
         <label for="staticNameInput">Your name</label>
         <input type="text" id="staticNameInput" disabled placeholder="(respondent types their name here)">
         <button type="button" disabled style="margin-top:10px;">Continue</button>
@@ -298,7 +306,7 @@
           <button type="button" class="pencil-btn" id="instructionsEditBtn" aria-label="Edit Ballot Instructions">✏️</button>
         </div>
         <div class="field-panel hidden" id="instructionsPanel">
-          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking.</p>
+          <p class="field-help">Shown above the ranking list on the ballot page — replaces the landing description above once a respondent starts ranking. Include the drag/reorder guidance here too — there's no separate fixed instruction text below it anymore.</p>
           <label for="instructionsInput">Ballot Instructions</label>
           <textarea id="instructionsInput" rows="3"></textarea>
           <div class="field-panel-actions">
@@ -307,10 +315,6 @@
           </div>
           <div class="field-status" id="instructionsStatus"></div>
         </div>
-      </div>
-
-      <div class="fixed-block">
-        <p class="sub">Drag items to order them, most preferred on top.</p>
       </div>
 
       <p class="subsection-header">Candidates</p>
@@ -451,8 +455,12 @@
     </div>
 
     <div id="step-name" class="hidden">
-      <p class="sub">Enter your name to start or resume ranking.</p>
-      <p class="sub">If you've already been here, your previous answers will be loaded so you can review or change them.</p>
+      <!-- The "enter your name to start/resume" guidance used to be hardcoded here, duplicating
+           whatever the admin-editable Description above already says. It's now folded into
+           Description's own default text (see BallotModel.js's createBallotSheet_) instead, so
+           there's one editable block of copy here rather than an editable one stacked on a
+           fixed one. Applies to newly created ballots; an existing ballot's Description keeps
+           whatever it already has. -->
       <label for="nameInput">Your name</label>
       <input type="text" id="nameInput" autocomplete="name">
       <button id="startBtn">Continue</button>
@@ -460,7 +468,8 @@
     </div>
 
     <div id="step-rank" class="hidden">
-      <p class="sub">Drag items to order them, most preferred on top.</p>
+      <!-- Same fold as step-name above, but for Instructions/"drag items to reorder" — see
+           BallotModel.js's createBallotSheet_ default. -->
       <ul id="topicList"></ul>
 
       <button id="submitBtn">Submit</button>
@@ -508,6 +517,7 @@
   // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
   var STATIC_BUILD_VERSION_ = "0.1.4.5";
   var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwRGVywtwcP9zAS2HvOJDlgBOa7t_H6l98yKBhR4fWzacDRvAg62fd5HFdhQ97C2Ef7uA/exec";
+  var STATIC_DEV_CONTACT_ = "stuart.donaldson@gmail.com";
 
   var params = new URLSearchParams(window.location.search);
   var cmd = params.get('cmd') || 'admin';
@@ -522,11 +532,27 @@
   }
   var webappUrl_ = resolveWebappUrl_();
 
+  // Appended to every troubleshooting message callApi_ raises below — "the developer" beats a
+  // dead end when there's genuinely nothing the respondent/admin can do about it themselves.
+  function _troubleshootingContact_() {
+    return STATIC_DEV_CONTACT_ ? ' If it keeps happening, contact ' + STATIC_DEV_CONTACT_ + '.'
+      : ' If it keeps happening, contact the site administrator.';
+  }
+
   /**
    * Calls a whitelisted GAS RPC (see ApiBridge.js's _API_WHITELIST_) via doPost ?cmd=api.
    * POSTs as text/plain (not application/json) so the browser treats this as a CORS "simple
    * request" and skips a preflight OPTIONS — Apps Script web apps don't implement OPTIONS, so a
    * real application/json POST would otherwise fail outright cross-origin.
+   *
+   * Every rejection here is rewritten into an actionable, plain-language message before it
+   * reaches a setStatus() call — the raw failure modes (a rejected fetch(), a non-2xx response,
+   * an unparseable body) each surface as cryptic browser/JSON-parser text otherwise ("Failed to
+   * fetch", "Unexpected token < in JSON at position 0", ...), which tells a respondent nothing
+   * they can act on. A GAS deployment mid-redeploy is the single most common real trigger for
+   * all three: `clasp deploy` briefly repoints the /exec alias, during which requests can fail
+   * outright (rejected fetch) or land on an interstitial HTML page instead of JSON (non-2xx /
+   * bad body) — hence the "try again in a minute" framing.
    *
    * @param {string} name RPC name.
    * @param {...*} args passed straight through to the GAS function.
@@ -541,7 +567,26 @@
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ name: name, args: args })
     })
-      .then(function (res) { return res.json(); })
+      .catch(function () {
+        // fetch() itself only rejects for network-level failures (offline, DNS, CORS, the
+        // deployment bouncing mid-redeploy) — never for a resolved-but-non-2xx response, which
+        // is handled below. The browser's own wording here ("Failed to fetch" / "NetworkError
+        // when attempting to fetch resource" / "Load failed") is accurate but meaningless to a
+        // respondent, so it's replaced rather than surfaced.
+        throw new Error('Could not reach the ballot server — check your internet connection.' + _troubleshootingContact_());
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          // A non-2xx response here is almost always GAS serving an HTML interstitial
+          // (permission prompt, deployment error page) instead of the JSON payload callApi_
+          // expects — res.json() below would otherwise fail on it with an opaque parser error.
+          throw new Error('The ballot server returned an error (HTTP ' + res.status + '), possibly because it’s ' +
+            'being redeployed right now — try again in a minute.' + _troubleshootingContact_());
+        }
+        return res.json().catch(function () {
+          throw new Error('The ballot server sent back a response this page couldn’t read — try reloading the page.' + _troubleshootingContact_());
+        });
+      })
       .then(function (json) {
         if (json && json.error) throw new Error(json.error);
         return json && json.result;
