@@ -1,32 +1,107 @@
 <!DOCTYPE html>
-<html>
+<html data-theme="f3">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>RankChoiceVoting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  /* Combined styles for all four views (list/edit/analyze/ballot) — deliberately kept close to
-     the original GAS-rendered pages' look (webAdmin.js's _ADMIN_STYLE_, webAdminEditPage.html,
-     webBallotPage.html) so this reads as the same app, not a redesign. */
+  /* Combined styles for all four views (list/edit/analyze/ballot). Colors, fonts, and radii are
+     CSS custom properties so a per-environment "design language" can be swapped by toggling
+     data-theme on <html> (stamped by tools/build-static-pages.js) without duplicating markup or
+     rules. Two themes exist today:
+       - (no data-theme / "legacy") the original Material-ish look this app has always had.
+       - "f3" — the F3 tactical design language from docs/f3-dl-idea.md, used for sit/prod.
+     nuuc keeps the legacy theme until its own design language is defined (see build script). */
+  :root {
+    --bg-page: #ffffff;
+    --text-primary: #202124;
+    --text-secondary: #5f6368;
+    --text-muted: #9aa0a6;
+    --text-body: #3c4043;
+    --border: #dadce0;
+    --surface-secondary: #f8f9fa;
+    --link: #1a73e8;
+    --accent: #1a73e8;
+    --accent-text: #ffffff;
+    --disabled-bg: #c7c7c7;
+    --success-bg: #e6f4ea;
+    --success-text: #188038;
+    --info-bg: #e8f0fe;
+    --info-text: #174ea6;
+    --error: #d93025;
+    --warning-border: #f9ab00;
+    --warning-bg: #fef7e0;
+    --warning-badge-bg: #f9ab00;
+    --warning-badge-text: #202124;
+    --dragging-shadow: rgba(0, 0, 0, 0.15);
+    --font-display: inherit;
+    --font-body: Arial, sans-serif;
+    --font-mono: 'Courier New', monospace;
+    --tracking-display: normal;
+    --transform-display: none;
+    --radius-card: 8px;
+    --radius-button: 6px;
+    --radius-badge: 10px;
+  }
+  html[data-theme="f3"] {
+    /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference). */
+    --bg-page: #1E2225;
+    --text-primary: #FFFFFF;
+    --text-secondary: #8A949E;
+    --text-muted: #8A949E;
+    --text-body: #C7CDD3;
+    --border: #3A4045;
+    --surface-secondary: #121416;
+    --link: #FF5A36;
+    --accent: #FF5A36;
+    --accent-text: #1E2225;
+    --disabled-bg: #4A5257;
+    --success-bg: rgba(16, 185, 129, 0.16);
+    --success-text: #10B981;
+    --info-bg: rgba(59, 130, 246, 0.16);
+    --info-text: #3B82F6;
+    --error: #FF5A36;
+    --warning-border: #F59E0B;
+    --warning-bg: rgba(245, 158, 11, 0.16);
+    --warning-badge-bg: #F59E0B;
+    --warning-badge-text: #1E2225;
+    --dragging-shadow: rgba(0, 0, 0, 0.4);
+    --font-display: 'Black Ops One', 'Chakra Petch', sans-serif;
+    --font-body: 'Inter', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
+    --tracking-display: 0.03em;
+    --transform-display: uppercase;
+    --radius-card: 8px;
+    --radius-button: 4px;
+    --radius-badge: 12px;
+  }
   *, *::before, *::after { box-sizing: border-box; }
+  html { background: var(--bg-page); }
   body {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-body);
     max-width: 640px;
     margin: 24px auto;
     padding: 0 16px;
-    color: #202124;
+    color: var(--text-primary);
+    background: var(--bg-page);
   }
+  h1, h2, h3 { font-family: var(--font-display); letter-spacing: var(--tracking-display); text-transform: var(--transform-display); }
   h1 { font-size: 1.4rem; }
-  a { color: #1a73e8; }
+  a { color: var(--link); }
   form { margin-bottom: 24px; }
   label { display: block; font-weight: bold; margin: 10px 0 6px; }
   input[type="text"], input[type="url"], textarea {
     width: 100%;
     font-size: 1rem;
     padding: 10px;
-    border: 1px solid #dadce0;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
     font-family: inherit;
+    background: var(--bg-page);
+    color: var(--text-primary);
   }
   textarea { resize: vertical; }
   button, a.btn {
@@ -34,9 +109,9 @@
     padding: 10px 16px;
     min-height: 44px; /* WCAG 2.5.5 touch-target minimum — no hover fallback on touch */
     border: none;
-    border-radius: 6px;
-    background: #1a73e8;
-    color: #fff;
+    border-radius: var(--radius-button);
+    background: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
     text-decoration: none;
     text-align: center;
@@ -46,79 +121,79 @@
     white-space: nowrap;
   }
   button { width: 100%; margin-top: 12px; }
-  button:disabled { background: #c7c7c7; cursor: default; }
-  button.secondary, a.btn.secondary { background: #f1f3f4; color: #202124; }
+  button:disabled { background: var(--disabled-bg); cursor: default; }
+  button.secondary, a.btn.secondary { background: var(--surface-secondary); color: var(--text-primary); }
   .hidden { display: none !important; }
-  .app-version-footer { color: #9aa0a6; font-size: 0.75em; margin-top: 24px; }
+  .app-version-footer { color: var(--text-muted); font-size: 0.75em; margin-top: 24px; font-family: var(--font-mono); }
 
   /* --- List view --- */
   .ballot-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
-  .ballot-card { border: 1px solid #dadce0; border-radius: 8px; padding: 12px 16px; }
+  .ballot-card { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px 16px; background: var(--surface-secondary); }
   .ballot-card h3 { margin: 0 0 2px; font-size: 1.05rem; }
-  .ballot-card .ballot-id { color: #5f6368; font-size: 0.85em; margin-bottom: 6px; }
-  .ballot-card .ballot-meta { color: #5f6368; font-size: 0.9em; margin-bottom: 10px; }
+  .ballot-card .ballot-id { color: var(--text-secondary); font-size: 0.85em; margin-bottom: 6px; font-family: var(--font-mono); }
+  .ballot-card .ballot-meta { color: var(--text-secondary); font-size: 0.9em; margin-bottom: 10px; }
   .ballot-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .ballot-actions a.btn { flex: 1 1 auto; min-width: 100px; }
   .ballot-info { margin-top: 10px; }
-  .ballot-info summary { cursor: pointer; color: #1a73e8; font-size: 0.9em; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
-  .ballot-info p { margin: 4px 0 0; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
+  .ballot-info summary { cursor: pointer; color: var(--link); font-size: 0.9em; padding: 6px 0; min-height: 44px; display: flex; align-items: center; }
+  .ballot-info p { margin: 4px 0 0; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
   @media (max-width: 420px) { button, a.btn { width: 100%; } }
 
   /* --- Edit view --- */
-  p.sub { color: #5f6368; margin: 0; }
-  #createdBanner { background: #e6f4ea; color: #188038; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
-  .edit-instructions { background: #e8f0fe; border-radius: 6px; padding: 12px 14px; color: #174ea6; font-size: 0.9em; margin-bottom: 20px; }
+  p.sub { color: var(--text-secondary); margin: 0; }
+  #createdBanner { background: var(--success-bg); color: var(--success-text); border-radius: var(--radius-button); padding: 10px 12px; margin-bottom: 16px; }
+  .edit-instructions { background: var(--info-bg); border-radius: var(--radius-button); padding: 12px 14px; color: var(--info-text); font-size: 0.9em; margin-bottom: 20px; }
   .edit-instructions p { margin: 0 0 6px; }
   .edit-instructions p:last-child { margin-bottom: 0; }
-  .section-divider { color: #9aa0a6; font-size: 0.8em; text-align: center; margin: 32px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; }
-  .subsection-header { font-size: 0.95rem; font-weight: bold; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #dadce0; }
-  .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: #5f6368; margin-left: 6px; }
+  .section-divider { color: var(--text-muted); font-size: 0.8em; text-align: center; margin: 32px 0 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; }
+  .subsection-header { font-size: 0.95rem; font-weight: bold; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+  .subsection-header .optional-tag { font-weight: normal; font-size: 0.8em; color: var(--text-secondary); margin-left: 6px; }
   .field-block { margin: 18px 0; }
   .field-row { display: flex; align-items: flex-start; gap: 4px; justify-content: space-between; }
   .pencil-btn { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; flex: 0 0 auto; }
-  .field-panel { margin-top: 10px; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; }
-  .field-help { margin: 0 0 10px; color: #5f6368; font-size: 0.9em; }
+  .field-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
+  .field-help { margin: 0 0 10px; color: var(--text-secondary); font-size: 0.9em; }
   .field-panel-actions { display: flex; gap: 8px; margin-top: 10px; }
   .field-panel-actions button { flex: 1; }
-  .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: #5f6368; }
-  .field-status.error { color: #d93025; }
+  .field-status { min-height: 1.2em; margin-top: 8px; font-size: 0.9em; color: var(--text-secondary); }
+  .field-status.error { color: var(--error); }
   .fixed-block { margin: 14px 0; }
-  .field-name-tag { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: #9aa0a6; font-weight: bold; margin-bottom: 4px; }
-  .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed #f9ab00; border-radius: 8px; background: #fef7e0; }
+  .field-name-tag { display: block; font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: bold; margin-bottom: 4px; }
+  .admin-only-section { margin-top: 32px; padding: 14px; border: 1px dashed var(--warning-border); border-radius: var(--radius-card); background: var(--warning-bg); }
   .admin-only-section .subsection-header { border-bottom: none; margin-top: 0; }
-  .admin-only-badge { display: inline-block; background: #f9ab00; color: #202124; font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+  .admin-only-badge { display: inline-block; background: var(--warning-badge-bg); color: var(--warning-badge-text); font-size: 0.65em; font-weight: bold; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius-badge); margin-left: 8px; vertical-align: middle; }
 
   /* --- Candidate/topic rows (shared by edit + ballot views) --- */
   ul#candidateList, ul#topicList { list-style: none; padding: 0; margin: 12px 0; }
-  ul#candidateList li, ul#topicList li { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+  ul#candidateList li, ul#topicList li { background: var(--surface-secondary); border: 1px solid var(--border); border-radius: var(--radius-button); padding: 8px 10px; margin-bottom: 6px; }
   ul#topicList li { display: flex; flex-direction: column; user-select: none; }
-  ul#topicList li.dragging { position: relative; z-index: 10; background: #e8f0fe; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+  ul#topicList li.dragging { position: relative; z-index: 10; background: var(--info-bg); box-shadow: 0 4px 10px var(--dragging-shadow); }
   .topic-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
-  .handle { font-size: 1.1rem; color: #5f6368; padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
+  .handle { font-size: 1.1rem; color: var(--text-secondary); padding: 10px 4px; min-height: 44px; display: flex; align-items: center; }
   #topicList .handle { cursor: grab; touch-action: none; }
   .topic-text { min-width: 0; overflow-wrap: break-word; font-weight: bold; }
   #topicList .topic-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: normal; }
   .topic-text.has-details { cursor: pointer; }
   .topic-text.has-details, .info-toggle, .topic-info-content { touch-action: manipulation; }
   .info-toggle { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 6px 8px; min-width: 44px; min-height: 44px; }
-  .topic-info-content { margin-top: 4px; padding-left: 34px; color: #3c4043; font-size: 0.9em; white-space: pre-wrap; }
-  .topic-info-content.empty { font-style: italic; color: #9aa0a6; }
+  .topic-info-content { margin-top: 4px; padding-left: 34px; color: var(--text-body); font-size: 0.9em; white-space: pre-wrap; }
+  .topic-info-content.empty { font-style: italic; color: var(--text-muted); }
   .topic-info-link { display: block; margin-top: 4px; padding-left: 34px; font-size: 0.9em; }
   .candidate-edit-panel { margin-top: 8px; }
-  .add-panel { margin-top: 12px; padding: 12px; border: 1px solid #dadce0; border-radius: 6px; background: #f8f9fa; }
+  .add-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-button); background: var(--surface-secondary); }
   .add-panel textarea { margin-top: 10px; }
   .add-panel-actions { display: flex; gap: 8px; }
   .add-panel-actions button { flex: 1; }
-  footer.ballot-footer { color: #5f6368; font-size: 0.85em; margin-top: 24px; }
-  p.ballot-contact { color: #5f6368; font-size: 0.85em; margin-top: 4px; }
-  #status, #status2 { color: #5f6368; min-height: 1.2em; margin-top: 8px; }
-  #status.error, #status2.error { color: #d93025; }
+  footer.ballot-footer { color: var(--text-secondary); font-size: 0.85em; margin-top: 24px; }
+  p.ballot-contact { color: var(--text-secondary); font-size: 0.85em; margin-top: 4px; }
+  #status, #status2 { color: var(--text-secondary); min-height: 1.2em; margin-top: 8px; }
+  #status.error, #status2.error { color: var(--error); }
 
   /* --- Analyze view --- */
-  .method-note { background: #e8f0fe; color: #174ea6; font-size: 0.9em; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .method-note { background: var(--info-bg); color: var(--info-text); font-size: 0.9em; padding: 10px 12px; border-radius: var(--radius-button); margin-bottom: 16px; }
   table.results-table { border-collapse: collapse; margin-bottom: 15px; width: 100%; }
-  table.results-table th, table.results-table td { border: 1px solid #dadce0; padding: 6px 8px; }
-  table.results-table th { background: #f8f9fa; text-align: left; }
+  table.results-table th, table.results-table td { border: 1px solid var(--border); padding: 6px 8px; }
+  table.results-table th { background: var(--surface-secondary); text-align: left; }
   table.results-table td.center { text-align: center; }
 </style>
 </head>
@@ -414,7 +489,7 @@
 <script>
   // Stamped by tools/build-static-pages.js per env — see that file's header. Left null here so
   // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
-  var STATIC_BUILD_VERSION_ = "0.1.4.4";
+  var STATIC_BUILD_VERSION_ = "0.1.4.5";
   var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwRGVywtwcP9zAS2HvOJDlgBOa7t_H6l98yKBhR4fWzacDRvAg62fd5HFdhQ97C2Ef7uA/exec";
 
   var params = new URLSearchParams(window.location.search);
