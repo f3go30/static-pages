@@ -6,7 +6,7 @@
 <title>RankChoiceVoting</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   /* Combined styles for all four views (list/edit/analyze/ballot). Colors, fonts, and radii are
      CSS custom properties so a per-environment "design language" can be swapped by toggling
@@ -42,38 +42,50 @@
     --font-mono: 'Courier New', monospace;
     --tracking-display: normal;
     --transform-display: none;
+    --weight-display: bold; /* matches the browser UA default this theme has always relied on */
     --radius-card: 8px;
     --radius-button: 6px;
     --radius-badge: 10px;
   }
   html[data-theme="f3"] {
-    /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference). */
-    --bg-page: #1E2225;
+    /* F3 tactical design language (docs/f3-dl-idea.md §6 token reference, refined palette). */
+    --bg-page: #1B1E21;
     --text-primary: #FFFFFF;
-    --text-secondary: #8A949E;
-    --text-muted: #8A949E;
+    --text-secondary: #9DA5B4;
+    --text-muted: #9DA5B4;
     --text-body: #C7CDD3;
-    --border: #3A4045;
-    --surface-secondary: #121416;
-    --link: #FF5A36;
-    --accent: #FF5A36;
-    --accent-text: #1E2225;
+    --border: #383D43;
+    --surface-secondary: #24282D;
+    --link: #C83737;
+    --accent: #C83737;
+    --accent-text: #FFFFFF;
     --disabled-bg: #4A5257;
-    --success-bg: rgba(16, 185, 129, 0.16);
-    --success-text: #10B981;
-    --info-bg: rgba(59, 130, 246, 0.16);
-    --info-text: #3B82F6;
-    --error: #FF5A36;
-    --warning-border: #F59E0B;
-    --warning-bg: rgba(245, 158, 11, 0.16);
-    --warning-badge-bg: #F59E0B;
-    --warning-badge-text: #1E2225;
+    --success-bg: rgba(46, 139, 87, 0.16);
+    --success-text: #2E8B57;
+    --info-bg: rgba(74, 134, 232, 0.16);
+    --info-text: #4A86E8;
+    --error: #C83737;
+    --warning-border: #E6A23C;
+    --warning-bg: rgba(230, 162, 60, 0.16);
+    --warning-badge-bg: #E6A23C;
+    --warning-badge-text: #1B1E21;
     --dragging-shadow: rgba(0, 0, 0, 0.4);
-    --font-display: 'Black Ops One', 'Chakra Petch', sans-serif;
+    /* The 3 Fs' accent colors (docs/f3-dl-idea.md §2) — not wired into any component yet since
+       this app has no per-F sections, but declared here so a future one can use them without
+       reaching for a raw hex. */
+    --f1-blue: #4A86E8;
+    --f2-amber: #E6A23C;
+    --f3-green: #2E8B57;
+    --font-display: 'Saira Stencil One', sans-serif;
     --font-body: 'Inter', Arial, sans-serif;
     --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
     --tracking-display: 0.03em;
     --transform-display: uppercase;
+    /* Saira Stencil One ships one weight (400) only — asking for bold makes the browser
+       synthesize a faux-bold by fattening the stencil glyphs, blurring out the cutouts into a
+       distracting fat sans-serif look (see h1/h2/h3 rule below). normal keeps the real stencil
+       face. */
+    --weight-display: normal;
     --radius-card: 8px;
     --radius-button: 4px;
     --radius-badge: 12px;
@@ -88,7 +100,12 @@
     color: var(--text-primary);
     background: var(--bg-page);
   }
-  h1, h2, h3 { font-family: var(--font-display); letter-spacing: var(--tracking-display); text-transform: var(--transform-display); }
+  /* font-weight is themed (--weight-display, see :root / html[data-theme="f3"] above) rather
+     than left to the browser UA default (bold) — the f3 theme's Black Ops One face has no bold
+     weight to give it, and asking anyway makes the browser synthesize a faux-bold that fattens
+     the stencil glyphs into a blurry, distracting look. font-synthesis: none is belt-and-braces
+     against that same faux-bold/faux-italic synthesis. */
+  h1, h2, h3 { font-family: var(--font-display); font-weight: var(--weight-display); font-synthesis: none; letter-spacing: var(--tracking-display); text-transform: var(--transform-display); }
   h1 { font-size: 1.4rem; }
   a { color: var(--link); }
   form { margin-bottom: 24px; }
