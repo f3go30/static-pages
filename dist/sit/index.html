@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-oStD3mwZPkRk7x4TlSU5fn4qncLaQlAbsZZwASd2/r8=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-SlO0GvuYEArin/xaIdjzeBm2mp1LDH9kna7b6QCh9YI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-/tvd3QZ1KZ0+EXYXH1QLSmnOkr0GhrESQ4oGTukBdSY=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-SlO0GvuYEArin/xaIdjzeBm2mp1LDH9kna7b6QCh9YI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1078,7 +1078,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0.4";
+  var STATIC_BUILD_VERSION_ = "2.5.0.5";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
