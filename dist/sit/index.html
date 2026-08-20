@@ -8,6 +8,18 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="Go30">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<!-- F3Go30-ah3v: belt-and-braces against leaking the ?id bearer token in the URL via the
+     Referer header. Not a live concern today (default strict-origin-when-cross-origin already
+     sends only the origin to script.google.com) but free, and unlike the CSP meta below this
+     needs no build-time computation, so it's present unconditionally in the unbuilt source too. -->
+<meta name="referrer" content="no-referrer">
+<!-- F3Go30-ah3v: tools/build-static-pages.js replaces this comment with a real
+     <meta http-equiv="Content-Security-Policy"> tag, computed AFTER version/webapp-URL stamping
+     (so the script-src hashes match the exact bytes actually served) — see buildCsp_. Left as an
+     inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
+     stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
+     would break every inline script there with no compensating benefit. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-zBUsNvUqRpJ4LTDEcCloAzkzL0rArulmCcDWPNKDvXs=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-8rG7uN73omhexknmC8PvRbsVxv+XOwC9dGTXu7k5XfE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -389,9 +401,14 @@
   <div id="apiErrorBanner" class="api-error-banner hidden">
     <strong id="apiErrorHeadline">Something went wrong.</strong>
     <span id="apiErrorServerGuidance">Please try again, or refresh the browser and try again. If the problem persists,
-      notify <span id="apiErrorSiteQName">your Site Q</span><a id="apiErrorContactLink" class="hidden" href="#">(email)</a>.</span>
+      notify <span id="apiErrorSiteQName">your Site Q</span> <a id="apiErrorContactLink" class="hidden" href="#">(email)</a>.</span>
     <span id="apiErrorNetworkGuidance" class="hidden">Check your internet connection and try again — nothing was lost.</span>
     <div id="apiErrorDetail" class="api-error-detail"></div>
+    <!-- F3Go30-n40u: shown only once a transport outage has run past
+         RECONNECT_POLL_RELOAD_OFFER_AFTER_MS_ — a full reload is the right hammer for a stuck
+         client-side cache, but it must be PAX-initiated (loses scroll/unsaved input), never
+         automatic. -->
+    <button id="apiErrorReloadBtn" class="secondary hidden" type="button" style="margin-top:8px;">Reload page</button>
   </div>
 
   <!-- F3Go30-ubwl.3: shown on arrival from a GAS redirect (?from=gas — F3Go30-ubwl §Marker
@@ -915,7 +932,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.4.10.40";
+  var STATIC_BUILD_VERSION_ = "2.5.0.1";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1171,14 +1188,205 @@
     }).then(function(json) {
       if (!json.ok) throw new Error(json.error || 'Server reported an error with no detail');
       return json;
+    }).then(function(json) {
+      // F3Go30-xyri: piggyback the queued-telemetry upload on any successful round trip rather
+      // than opening a dedicated connection for it — fire-and-forget, never blocks/degrades the
+      // call that triggered it. Excludes the upload action itself so a successful flush doesn't
+      // immediately try to flush its own (now-empty) queue again.
+      if (action !== 'clientTelemetry') flushClientTelemetryQueue_();
+      return json;
     }).finally(function() {
       pendingRequestCount_--;
       updateSyncingIndicator_();
     });
   }
 
+  // ── F3Go30-xyri: client-side error telemetry ──────────────────────────────────────────────
+  // Captures any client-observed error/crash into a bounded localStorage queue, uploaded
+  // opportunistically (see callApi above) once connectivity is available. See the issue's
+  // addenda for why each field is here: stack/isTransport/online/swState exist because a bare
+  // frequency count wasn't enough to root-cause the FEEDBACK-failed-to-connect.png report (the
+  // PAX's network was demonstrably fine while this app kept failing) — each field is a piece of
+  // evidence toward telling "genuinely offline" apart from "something stuck client-side."
+
+  var CLIENT_TELEMETRY_QUEUE_KEY_ = 'go30ClientTelemetryQueue:v1';
+  var CLIENT_TELEMETRY_QUEUE_MAX_ = 25;
+  var CLIENT_TELEMETRY_QUEUE_MAX_AGE_MS_ = 1000 * 60 * 60 * 24 * 7; // 7 days
+  var CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_ = 10;
+
+  function makeClientTelemetryId_() {
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + '-' + Math.random().toString(16).slice(2));
+  }
+
+  function loadClientTelemetryQueue_() {
+    try {
+      var raw = localStorage.getItem(CLIENT_TELEMETRY_QUEUE_KEY_);
+      var list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  function saveClientTelemetryQueue_(list) {
+    try { localStorage.setItem(CLIENT_TELEMETRY_QUEUE_KEY_, JSON.stringify(list)); } catch (e) { /* storage full/unavailable — best effort */ }
+  }
+
+  /** Bounds the queue by count and age so a client that can never reach the server doesn't grow
+   * localStorage without limit (F3Go30-xyri AC). */
+  function pruneClientTelemetryQueue_(list) {
+    var cutoff = Date.now() - CLIENT_TELEMETRY_QUEUE_MAX_AGE_MS_;
+    var pruned = list.filter(function(rec) { return rec && rec.ts && Date.parse(rec.ts) >= cutoff; });
+    if (pruned.length > CLIENT_TELEMETRY_QUEUE_MAX_) pruned = pruned.slice(pruned.length - CLIENT_TELEMETRY_QUEUE_MAX_);
+    return pruned;
+  }
+
+  /** Captures one client-observed telemetry record — an error/crash (F3Go30-xyri) or a
+   * reconnect-poll attempt/outcome (F3Go30-n40u, same stream per that issue's own text) — for
+   * later upload. Never throws: a failure here must never compound whatever it's reporting on.
+   * `extra` carries kind-specific fields (errorText/stack/isTransport for an error; attempt/
+   * elapsedMs/outcome for a poll tick).
+   * @param {string} kind - 'error' | 'reconnectPoll'.
+   * @param {string} action - The callApi action this record is about (or a source tag like
+   *   'window.onerror' for a capture with no associated action).
+   * @param {Object=} extra
+   */
+  function captureClientTelemetry_(kind, action, extra) {
+    try {
+      var record = Object.assign({
+        id: makeClientTelemetryId_(),
+        ts: new Date().toISOString(),
+        kind: kind,
+        action: action || '',
+        clientVersion: STATIC_BUILD_VERSION_,
+        ns: NS_,
+        // Reuses whatever identify already resolved client-side — same fields already logged
+        // server-side for normal requests (F3Go30-xyri addendum #2), not new PII.
+        f3Name: (typeof state !== 'undefined' && state && state.f3Name) || '',
+        online: (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : null,
+        swState: (typeof navigator !== 'undefined' && navigator.serviceWorker)
+          ? (navigator.serviceWorker.controller ? 'controlled' : 'no-controller')
+          : 'unsupported'
+      }, extra || {});
+      saveClientTelemetryQueue_(pruneClientTelemetryQueue_(loadClientTelemetryQueue_().concat([record])));
+    } catch (e) { /* capture must never throw */ }
+  }
+
+  /** Captures a client-observed error/crash. The transport-failure banner path (showApiError_)
+   * and the global handlers below funnel through here. */
+  function captureClientError_(action, err, extra) {
+    captureClientTelemetry_('error', action, Object.assign({
+      errorText: (err && err.message) ? err.message : String(err),
+      stack: (err && err.stack) ? String(err.stack) : '',
+      isTransport: !!(err && err.isTransport)
+    }, extra || {}));
+  }
+
+  var clientTelemetryFlushInFlight_ = false;
+
+  /** Uploads queued telemetry records once connectivity is available. Fire-and-forget: never
+   * blocks or degrades the PAX-facing flow that triggered the capture, and any upload failure is
+   * swallowed here rather than surfaced via showApiError_ — a failed background upload is not
+   * itself worth alarming the PAX about. Only removes a record from the queue once the server
+   * actually acknowledges the batch, so a lost response leaves it queued for next time. */
+  function flushClientTelemetryQueue_() {
+    if (clientTelemetryFlushInFlight_) return;
+    var queue = loadClientTelemetryQueue_();
+    if (!queue.length) return;
+    clientTelemetryFlushInFlight_ = true;
+    var batch = queue.slice(0, CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_);
+    callApi('clientTelemetry', { records: batch })
+      .then(function() {
+        var sentIds = batch.map(function(rec) { return rec.id; });
+        var remaining = loadClientTelemetryQueue_().filter(function(rec) { return sentIds.indexOf(rec.id) === -1; });
+        saveClientTelemetryQueue_(remaining);
+      })
+      .catch(function() { /* stays queued, retried on the next successful callApi */ })
+      .finally(function() { clientTelemetryFlushInFlight_ = false; });
+  }
+
+  window.addEventListener('error', function(e) {
+    captureClientError_('window.onerror', e.error || new Error(e.message), { source: 'window.onerror' });
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    var reason = e.reason;
+    captureClientError_('unhandledrejection', (reason instanceof Error) ? reason : new Error(String(reason)), { source: 'unhandledrejection' });
+  });
+
+  // ── F3Go30-n40u: background reconnect poll ────────────────────────────────────────────────
+  // While the transport-failure banner is showing, silently polls a cheap read (identify,
+  // already called on load) until it succeeds, hits the attempt cap, or the banner clears some
+  // other way. Never forces a reload — see apiErrorReloadBtn's wiring below for the PAX-initiated
+  // escalation once an outage runs long.
+
+  var RECONNECT_POLL_INTERVAL_MS_ = 10000;
+  var RECONNECT_POLL_MAX_ATTEMPTS_ = 30; // ~5 minutes at the base interval, then stop escalating
+  var RECONNECT_POLL_RELOAD_OFFER_AFTER_MS_ = 120000; // 2 minutes of continuous failure
+
+  var reconnectPollState_ = null; // { attempts, startedAt, timerId } while a poll is running
+
+  function stopReconnectPoll_() {
+    if (reconnectPollState_ && reconnectPollState_.timerId) clearTimeout(reconnectPollState_.timerId);
+    reconnectPollState_ = null;
+    var reloadBtn = $('apiErrorReloadBtn');
+    if (reloadBtn) reloadBtn.classList.add('hidden');
+  }
+
+  /** Re-fetches whatever read view is currently on screen once connectivity returns — the "for
+   * read actions, silently repaints with fresh data" half of F3Go30-n40u's AC. Scoped to the
+   * currently-visible view rather than "whichever action originally failed": by the time a poll
+   * succeeds the PAX may have navigated on, and repainting a hidden view would be wasted work.
+   * Write-shaped actions (identify/checkin/save/feedback) do nothing here — their own submit
+   * control is still there and working, and a write is never auto-resubmitted. */
+  function repaintCurrentView_() {
+    if (state.currentStep === 'checkin' && state.advancedOpen && state.calMonthKey) {
+      delete state.calGridCache[state.calMonthKey];
+      loadCalMonth_(state.calMonthKey);
+    } else if (state.currentStep === 'dashboard') {
+      loadDashboard_(state.viewDate ? isoDate_(state.viewDate) : undefined);
+    } else if (state.currentStep === 'bonus') {
+      loadBonusList_();
+    }
+  }
+
+  function startReconnectPoll_() {
+    if (reconnectPollState_) return; // already running
+    reconnectPollState_ = { attempts: 0, startedAt: Date.now() };
+    scheduleNextReconnectPoll_();
+  }
+
+  function scheduleNextReconnectPoll_() {
+    if (!reconnectPollState_) return;
+    reconnectPollState_.timerId = setTimeout(runReconnectPollAttempt_, RECONNECT_POLL_INTERVAL_MS_);
+  }
+
+  function runReconnectPollAttempt_() {
+    if (!reconnectPollState_) return;
+    var pollState = reconnectPollState_;
+    pollState.attempts++;
+    var elapsedMs = Date.now() - pollState.startedAt;
+
+    callApi('identify', { f3Name: state.f3Name, email: state.email }).then(function() {
+      captureClientTelemetry_('reconnectPoll', 'identify', { attempt: pollState.attempts, elapsedMs: elapsedMs, outcome: 'recovered' });
+      stopReconnectPoll_();
+      hideApiError_();
+      repaintCurrentView_();
+    }, function() {
+      captureClientTelemetry_('reconnectPoll', 'identify', { attempt: pollState.attempts, elapsedMs: elapsedMs, outcome: 'failed' });
+      if (reconnectPollState_ !== pollState) return; // stopped meanwhile (banner cleared another way)
+      if (elapsedMs >= RECONNECT_POLL_RELOAD_OFFER_AFTER_MS_) {
+        var reloadBtn = $('apiErrorReloadBtn');
+        if (reloadBtn) reloadBtn.classList.remove('hidden');
+      }
+      if (pollState.attempts >= RECONNECT_POLL_MAX_ATTEMPTS_) {
+        stopReconnectPoll_(); // give up escalating — the reload button (if offered) is what's left
+        return;
+      }
+      scheduleNextReconnectPoll_();
+    });
+  }
+
   function hideApiError_() {
     $('apiErrorBanner').classList.add('hidden');
+    stopReconnectPoll_();
   }
 
   function setButtonLoading_(btn, isLoading, loadingText) {
@@ -1493,6 +1701,10 @@
     // nothing. Bail before touching the DOM.
     if (pageIsUnloading_) return;
 
+    // F3Go30-xyri: every banner-worthy failure is a client-observed error worth capturing for
+    // frequency/root-cause analysis, uploaded opportunistically once connectivity returns.
+    captureClientError_(action, err);
+
     var detail =
       'Time: ' + new Date().toISOString() + '\n' +
       'Action: ' + action + '\n' +
@@ -1518,7 +1730,16 @@
     }
 
     $('apiErrorBanner').classList.remove('hidden');
+
+    // F3Go30-n40u: only a transport failure warrants a reconnect poll — a server that answered
+    // (any status, any json.ok:false) has already made its decision, and polling identify won't
+    // change that.
+    if (isTransport) startReconnectPoll_();
   }
+
+  $('apiErrorReloadBtn').addEventListener('click', function() {
+    location.reload();
+  });
 
   function updateHeaderIdentity_(f3Name, team, monthLabel) {
     var title = (NAME_SPACE || '') + (f3Name ? ': ' + f3Name : '');
