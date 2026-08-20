@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-n022oGcVd9TNT5DQ1cR+LScj0Z/JzB8CsopXrWeogHk=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-A6+Loc6TgD2W1cmF/ce5PMMjD4rUyV+Coi8JKxflpSg='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-oStD3mwZPkRk7x4TlSU5fn4qncLaQlAbsZZwASd2/r8=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-SlO0GvuYEArin/xaIdjzeBm2mp1LDH9kna7b6QCh9YI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -580,6 +580,22 @@
     </div>
   </div>
 
+  <!-- F3Go30-xyvs: SignupReminder popup — prompts an already-identified PAX to sign up for next
+       month once that tracker exists and they haven't yet. Reuses the announcement splash's
+       .announce-overlay/.announce-modal markup/CSS (F3Go30-g9bi) rather than a fourth overlay
+       component. -->
+  <div id="signupReminderModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>Sign up for <span id="signupReminderMonthLabel"></span>?</h2>
+      <p>You're not signed up for <span id="signupReminderMonthLabel2"></span> yet — lock in your
+        goals now so you're ready when the month starts.</p>
+      <div class="announce-modal-actions">
+        <button id="signupReminderLaterBtn" type="button">Remind me later</button>
+        <button class="primary" id="signupReminderSignUpBtn" type="button">Sign Up</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap">
 
     <div id="step-tokenLoading" class="hidden">
@@ -1062,7 +1078,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0.3";
+  var STATIC_BUILD_VERSION_ = "2.5.0.4";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1752,6 +1768,79 @@
     hideAnnouncementModal_();
   });
 
+  /** F3Go30-xyvs: SignupReminder popup — mirrors the announcement splash's mechanism above
+   * (server-driven, unconditional show/hide, F3Go30-g9bi) but its own "remind later" semantics:
+   * unlike the splash's snooze (sessionStorage, fixed delay), this one must survive an app
+   * restart/tab close and clear on the next CALENDAR DAY rather than after a fixed delay — so it
+   * uses localStorage and a wake time pinned to local midnight instead of Date.now() + delay.
+   * Keyed by monthLabel, not a content fingerprint like the splash: there's only ever one
+   * next-month target at a time, so there's no "edited content" case to distinguish. The trigger
+   * itself (res.signupReminder) is resolved server-side (resolveSignupReminder_dw_,
+   * dashboardWebapp.js) and re-evaluated on every identify/resume-refresh — this function only
+   * ever reflects what the latest LIVE response says, same isLive gate as applyAnnouncementState_
+   * (never painted from the cached instant-paint snapshot, so a stale reminder can't flash before
+   * the live identify lands). */
+  var SIGNUP_REMINDER_SNOOZE_KEY_ = 'go30SignupReminderSnoozedUntil';
+  var signupReminderShownMonthLabel_ = null;
+
+  function startOfNextLocalDay_(fromMs) {
+    var d = new Date(fromMs);
+    d.setHours(24, 0, 0, 0);
+    return d.getTime();
+  }
+  function signupReminderSnoozed_(monthLabel) {
+    try {
+      var stored = localStorage.getItem(SIGNUP_REMINDER_SNOOZE_KEY_);
+      if (!stored) return false;
+      var sep = stored.indexOf('|');
+      var wakeAt = Number(sep === -1 ? stored : stored.slice(0, sep));
+      var snoozedMonthLabel = sep === -1 ? null : stored.slice(sep + 1);
+      return !!wakeAt && Date.now() < wakeAt && snoozedMonthLabel === monthLabel;
+    } catch (e) { return false; }
+  }
+  function hideSignupReminderModal_() {
+    signupReminderShownMonthLabel_ = null;
+    $('signupReminderModal').classList.add('hidden');
+  }
+  function showSignupReminderModal_(reminder) {
+    signupReminderShownMonthLabel_ = reminder.monthLabel;
+    $('signupReminderMonthLabel').textContent = reminder.monthLabel;
+    $('signupReminderMonthLabel2').textContent = reminder.monthLabel;
+    $('signupReminderModal').classList.remove('hidden');
+  }
+  /** Called alongside applyServerConfig_ on every LIVE identify/resume-refresh response — shows
+   * or hides UNCONDITIONALLY so signing up for next month through ANY path (this popup, direct
+   * nav, admin action) clears it on the PAX's very next response, not just client-side dismissal.
+   * @param {boolean=} isLive Defaults true — see this function's docstring above. */
+  function applySignupReminderState_(reminder, isLive) {
+    if (isLive === false) return;
+    if (reminder && !signupReminderSnoozed_(reminder.monthLabel)) {
+      // Never collide with an active announcement splash — the two are mutually exclusive
+      // server-driven overlays, so let the (necessarily higher-priority, admin-authored)
+      // announcement win if both are up at once rather than stacking two modals.
+      if (!$('announcementModal').classList.contains('hidden')) return;
+      showSignupReminderModal_(reminder);
+    } else {
+      hideSignupReminderModal_();
+    }
+  }
+  $('signupReminderLaterBtn').addEventListener('click', function() {
+    if (signupReminderShownMonthLabel_ != null) {
+      try {
+        localStorage.setItem(SIGNUP_REMINDER_SNOOZE_KEY_, startOfNextLocalDay_(Date.now()) + '|' + signupReminderShownMonthLabel_);
+      } catch (e) { /* not fatal */ }
+    }
+    hideSignupReminderModal_();
+  });
+  $('signupReminderSignUpBtn').addEventListener('click', function() {
+    hideSignupReminderModal_();
+    // Already authenticated (state.f3Name/email are set — this popup only ever shows on a
+    // matched identify) and prefilled from the PAX's current-month PaxDB record, same as every
+    // other openSignup_('next') call site (F3Go30-ez8v's nmcYesBtn/openNextMonthChoice_ path) —
+    // no second prefill mechanism.
+    openSignup_('next');
+  });
+
   /** True when this document is a BUILT client running a different version than the server
    * reports. A null clientBuild means unbuilt src/ served directly (local dev + Playwright) —
    * there is no build to be behind, so that is never staleness. */
@@ -2075,6 +2164,7 @@
    * result into a fresh page. */
   function applyTypedIdentifyResult_(result) {
     if (result.config) applyServerConfig_(result.config);
+    applySignupReminderState_(result.signupReminder);
     if (result.matched) {
       applyIdentifySuccess_(result);
     } else if (result.knownPaxNotRegistered) {
@@ -2160,6 +2250,7 @@
     callApi('identify', { token: SAVED_IDENTITY_TOKEN })
       .then(function(res) {
         if (res.config) applyServerConfig_(res.config);
+        applySignupReminderState_(res.signupReminder);
         if (res.matched) {
           reconcileWithLocalWrites_(res);
           applyIdentifySuccess_(res, { preserveView: paintedFromSnapshot_ });
@@ -4257,6 +4348,7 @@
         // untouched; the PAX's next real action (a check-in submit) will surface the failure.
         if (!res.matched) return;
         if (res.config) applyServerConfig_(res.config);
+        applySignupReminderState_(res.signupReminder);
         reconcileWithLocalWrites_(res);
         applyIdentifySuccess_(res, { preserveView: true });
         saveCheckinSnapshot_(SAVED_IDENTITY_TOKEN, res);
