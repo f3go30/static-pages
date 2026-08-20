@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-zBUsNvUqRpJ4LTDEcCloAzkzL0rArulmCcDWPNKDvXs=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-8rG7uN73omhexknmC8PvRbsVxv+XOwC9dGTXu7k5XfE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-pbFVguF6/AnPQlQuurux8o/tp4HtlNZsSaMfcfjPG08=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-F5/MmiYbdr+j5D0lrW4eGW3/flJphU7wrWfEYMcb++4='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -273,6 +273,9 @@
   .page-banner-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .page-banner button { background: none; border: none; color: var(--warn-fg); text-decoration: underline; cursor: pointer; font-size: 14px; padding: 0; font-family: inherit; flex-shrink: 0; }
   .page-banner-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  /* F3Go30-9u68: inline info-splash trigger next to a field-label (e.g. signup's Team type) —
+     no border/background of its own so it reads as part of the label, not a separate button. */
+  .info-btn { background: none; border: none; cursor: pointer; font-size: 15px; padding: 0; margin-left: 4px; vertical-align: middle; line-height: 1; }
   .announce-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 1000; }
   /* F3Go30-g9bi live-verify fix: .hidden{display:none} (declared earlier in this stylesheet) and
      .announce-overlay{display:flex} above are both single-class selectors of equal specificity,
@@ -451,6 +454,29 @@
     </div>
   </div>
 
+  <!-- F3Go30-9u68: static (not config-driven) info splash for the signup Team field — reuses
+       the announcement splash's .announce-overlay/.announce-modal markup and CSS (F3Go30-g9bi)
+       rather than a second overlay component, since the two never show at once (signup vs.
+       identify/dashboard) and the visual language should match. -->
+  <div id="teamInfoModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>Why your team matters</h2>
+      <div>
+        <p>Your team is your accountability and support structure for this Go30 month — the
+          people who notice if you go missing and cheer when you hit a milestone. Go30 works
+          because someone else knows what you committed to.</p>
+        <p><strong>AO-based team:</strong> pick your regular F3 AO (e.g. Iron Mtn, The Ranch) —
+          your teammates are the other PAX who signed up from that same AO.</p>
+        <p><strong>Custom team:</strong> not tied to one AO, or want to team up with specific
+          PAX? Type a team name (a Slack channel, a nickname your crew agrees on) — anyone who
+          types that same name lands on your team.</p>
+      </div>
+      <div class="announce-modal-actions">
+        <button id="teamInfoCloseBtn" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap">
 
     <div id="step-tokenLoading" class="hidden">
@@ -528,7 +554,7 @@
           </div>
         </div>
 
-        <label class="field-label">Team type</label>
+        <label class="field-label">Team type <button type="button" id="suTeamInfoBtn" class="info-btn" aria-label="Why does my team matter?">ℹ️</button></label>
         <div class="team-type-row">
           <label class="team-type-option" id="suTtAoOption"><input type="radio" name="suTt" value="ao"> AO-based</label>
           <label class="team-type-option" id="suTtOtherOption"><input type="radio" name="suTt" value="other"> Custom Team</label>
@@ -557,6 +583,7 @@
           Ok to send me reminder emails when it looks like I'm late.
         </label>
 
+        <div id="suInfoError" class="error-text hidden"></div>
         <button class="primary" id="suInfoNextBtn">Continue</button>
         <button class="secondary" id="suInfoBackBtn">Back</button>
       </div>
@@ -932,7 +959,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0.1";
+  var STATIC_BUILD_VERSION_ = "2.5.0.2";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2199,18 +2226,27 @@
    * teammate view (renderPaxDetailBonusEntries_) so the two never drift out of shape. */
   function bonusEntryInnerHtml_(entry, editable) {
     var dateLabel = entry.whenIso ? formatNavDate_(parseIsoDate_(entry.whenIso)) : '';
-    var isExtra = !!entry.complete && entry.counts === false;
+    // F3Go30-6faz.1: a duplicated Slack Link is silently dropped by the sheet's own dedup the
+    // same way a weekly-cap repeat is — treat both as the same "extra" badge/note rather than
+    // teaching the list a second visual state, only varying the note's wording by cause.
+    var isCapExtra = !!entry.complete && entry.counts === false;
+    var isDuplicateLinkExtra = !!entry.complete && !isCapExtra && entry.duplicateLink === true;
+    var isExtra = isCapExtra || isDuplicateLinkExtra;
     var badgeClass = !entry.complete ? 'pending' : (isExtra ? 'extra' : 'complete');
     var badgeText = !entry.complete ? 'Needs link' : (isExtra ? 'Logged (extra)' : '✓ Counted');
+    var extraNote = isCapExtra
+      ? 'Great job getting out there! Only one ' + escapeHtml_(entry.type) +
+        ' counts per week, so this one won’t add extra points — keep up the good work.'
+      : (isDuplicateLinkExtra
+        ? 'This Slack Link was already used for a ' + escapeHtml_(entry.type) +
+          ' entry this week, so this one won’t add extra points.'
+        : '');
     return '<div class="bonus-entry-top">' +
         '<span class="bonus-entry-type">' + escapeHtml_(entry.type) + '</span>' +
         '<span class="bonus-entry-date">' + escapeHtml_(dateLabel) + '</span>' +
       '</div>' +
       '<div class="bonus-entry-message">' + escapeHtml_(entry.message) + '</div>' +
-      (isExtra
-        ? '<div class="bonus-entry-note">Great job getting out there! Only one ' + escapeHtml_(entry.type) +
-          ' counts per week, so this one won’t add extra points — keep up the good work.</div>'
-        : '') +
+      (isExtra ? '<div class="bonus-entry-note">' + extraNote + '</div>' : '') +
       '<div class="bonus-entry-bottom">' +
         '<span class="bonus-badge ' + badgeClass + '">' + badgeText + '</span>' +
         (editable ? '<button class="bonus-edit-btn" data-row="' + entry.rowIndex + '">Edit</button>' : '') +
@@ -2822,6 +2858,7 @@
   }
 
   function fillSignupInfoStep_() {
+    $('suInfoError').classList.add('hidden');
     $('suInfoHeading').textContent = signupState.wasMatched ? 'Review your registration' : "Welcome! Let's get your info";
     $('suMatchedCallout').classList.toggle('hidden', !signupState.wasMatched);
     $('suInfoF3Name').textContent = state.f3Name;
@@ -2837,6 +2874,32 @@
     $('suNagInput').checked = signupState.nag;
     renderSignupTeamTypeUI_();
   }
+
+  /**
+   * F3Go30-9u68: team and WHO/WHAT/HOW goals are required before a signup can proceed past the
+   * info step — a PAX who abandons here (the "McLovin" case named in the issue) previously had
+   * no signal anything was missing. Returns a human-readable reason (which also explains WHY, per
+   * the issue's AC) or null when the step is complete. Checked against signupState, not the DOM,
+   * since every field already keeps signupState in sync via its own input listener above.
+   * @returns {string|null}
+   */
+  function validateSignupInfoStep_() {
+    var teamOk = !!(signupState.teamType && String(signupState.team || '').trim());
+    if (!teamOk) {
+      return 'Please choose a team before continuing — team is how F3 accountability and peer ' +
+        'support happen on Go30; without one, nobody’s watching for you to fall behind.';
+    }
+    var goalsOk = String(signupState.who || '').trim() && String(signupState.what || '').trim() &&
+      String(signupState.how || '').trim();
+    if (!goalsOk) {
+      return 'Please fill in WHO, WHAT, and HOW before continuing — naming a real goal is the ' +
+        'core Go30 mechanism for lasting change, not just a formality.';
+    }
+    return null;
+  }
+
+  function showTeamInfoModal_() { $('teamInfoModal').classList.remove('hidden'); }
+  function hideTeamInfoModal_() { $('teamInfoModal').classList.add('hidden'); }
 
   function renderSignupMonthChoices_() {
     var months = signupState.months || {};
@@ -2960,7 +3023,17 @@
   $('suPhoneInput').addEventListener('input', function() { signupState.phone = this.value; });
   $('suNagInput').addEventListener('change', function() { signupState.nag = this.checked; });
 
+  $('suTeamInfoBtn').addEventListener('click', showTeamInfoModal_);
+  $('teamInfoCloseBtn').addEventListener('click', hideTeamInfoModal_);
+
   $('suInfoNextBtn').addEventListener('click', function() {
+    var validationError = validateSignupInfoStep_();
+    if (validationError) {
+      $('suInfoError').textContent = validationError;
+      $('suInfoError').classList.remove('hidden');
+      return;
+    }
+    $('suInfoError').classList.add('hidden');
     if (!signupState.months || !signupState.months.next) {
       signupState.targetMonth = 'current';
       performSignupSave_($('suInfoNextBtn'));
@@ -3835,6 +3908,12 @@
     if (saved && saved.complete && saved.counts === false) {
       showBonusSaveNotice_('Recorded — but it won’t add points: only one ' + saved.type +
         ' counts per week, and you already have one credited for this week.');
+    } else if (saved && saved.complete && saved.duplicateLink === true) {
+      // F3Go30-6faz.1: same signal as the weekly-cap notice above, for the case that notice
+      // doesn't cover — an uncapped type (e.g. EHing FNG) whose reused Slack Link is silently
+      // collapsed by the sheet's own UNIQUE(A:F) dedup instead of a weekly-cap rule.
+      showBonusSaveNotice_('Recorded — but it won’t add points: this Slack Link was already used for a ' +
+        saved.type + ' entry this week.');
     } else {
       hideBonusSaveNotice_();
     }
