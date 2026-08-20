@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-pbFVguF6/AnPQlQuurux8o/tp4HtlNZsSaMfcfjPG08=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-F5/MmiYbdr+j5D0lrW4eGW3/flJphU7wrWfEYMcb++4='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-n022oGcVd9TNT5DQ1cR+LScj0Z/JzB8CsopXrWeogHk=' 'sha256-WQSs/+36TUdbJSqDL1kfS2sXv+yE4la95rSLd3loipI=' 'sha256-A6+Loc6TgD2W1cmF/ce5PMMjD4rUyV+Coi8JKxflpSg='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -302,6 +302,18 @@
   .announce-modal-actions button { font-family: inherit; font-size: 14px; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
   #announcementRemindLaterBtn { background: none; border: 1px solid var(--border); color: var(--text); }
   #announcementDismissBtn { background: var(--brand); border: 1px solid var(--brand); color: #fff; }
+  /* F3Go30-1pqo: settings/tools menu + its content-only sub-modals (FAQ) — all three reuse
+     .announce-overlay/.announce-modal (F3Go30-g9bi) rather than a new overlay component, per
+     the pattern established in F3Go30-9u68's #teamInfoModal (none of these ever show at once). */
+  .header-name-btn { cursor: pointer; background: none; border: none; font: inherit; color: inherit; padding: 0; text-align: left; display: flex; align-items: center; gap: 5px; }
+  .header-name-btn .header-name { display: inline; }
+  .header-name-btn .menu-caret { font-size: 12px; opacity: .7; }
+  .settings-menu-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+  .settings-menu-item { display: block; width: 100%; text-align: left; font: inherit; font-size: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); cursor: pointer; }
+  .settings-menu-item:disabled { color: var(--text-faint); cursor: default; opacity: .6; }
+  .faq-list dt { font-weight: bold; color: var(--brand); margin: 14px 0 4px; font-size: 15px; }
+  .faq-list dt:first-child { margin-top: 0; }
+  .faq-list dd { margin: 0; font-size: 15px; line-height: 1.4; color: var(--text); }
   .date-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
   .date-nav-btn { width: 44px; height: 44px; border-radius: 8px; border: 2px solid var(--brand); background: var(--card-bg); color: var(--brand); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
   .date-nav-btn svg { width: 20px; height: 20px; display: block; }
@@ -381,10 +393,19 @@
            by showStep()/HEADER_BACK_TARGET_ rather than a per-card Back button, so it survives
            whichever step is on screen instead of being torn down and rebuilt with each. -->
       <button id="headerBackBtn" class="more-btn hidden" title="Back">&larr;</button>
-      <div>
-        <div class="header-name" id="headerName"></div>
-        <div class="header-sub" id="headerSub"></div>
-      </div>
+      <!-- F3Go30-1pqo.1: settings/tools menu trigger. Wraps the existing #headerName/#headerSub
+           text nodes (left as-is — updateHeaderIdentity_/applyServerConfig_ set their
+           textContent directly and are unaffected) rather than making the bare div clickable,
+           so the trigger is a real, keyboard-reachable <button> on every step (the header is
+           sticky and outside .wrap, so this one mount point covers identify/checkin/dashboard/
+           bonus/signup without a per-step audit). -->
+      <button type="button" id="headerIdentityBtn" class="header-name-btn" title="Menu">
+        <div>
+          <div class="header-name" id="headerName"></div>
+          <div class="header-sub" id="headerSub"></div>
+        </div>
+        <span class="menu-caret">&#9662;</span>
+      </button>
     </div>
     <div class="header-right">
       <!-- F3Go30-5nfj.5: lives in the persistent header (never hidden by showStep()) so it
@@ -473,6 +494,88 @@
       </div>
       <div class="announce-modal-actions">
         <button id="teamInfoCloseBtn" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-1pqo.1: settings/tools menu, opened by tapping the PAX name in the persistent
+       header (#headerName, always present outside .wrap — see the header markup below). Only
+       the entries this stage (F3Go30-1pqo.4/.5/.7/.9 + que4) actually delivers: Theme/
+       Notifications/Logout (F3Go30-1pqo.2/.3/.8) are added in Stage 9 once their own
+       infrastructure (kgzo.5, 833s.7) lands — see PLAN-08-19.md Stage 3 handoff. -->
+  <div id="settingsModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>Menu</h2>
+      <div class="settings-menu-list">
+        <button type="button" class="settings-menu-item" id="settingsHowBtn">How It Works</button>
+        <button type="button" class="settings-menu-item" id="settingsFaqBtn">FAQ</button>
+        <button type="button" class="settings-menu-item" id="settingsBonusBtn">Log Bonus Points</button>
+        <button type="button" class="settings-menu-item" id="settingsFeedbackBtn">Send Feedback</button>
+      </div>
+      <div class="announce-modal-actions">
+        <button id="settingsCloseBtn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-1pqo.5: FAQ content lives here directly (like #teamInfoModal above) rather than a
+       synced standalone page (tools/sync-how-it-works.js's pattern) — it's shown from exactly
+       one place (this menu), so there's no second copy for a sync step to guard against
+       diverging. -->
+  <div id="faqModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>FAQ</h2>
+      <dl class="faq-list">
+        <dt>What counts as a "Hit"?</dt>
+        <dd>Doing the one daily challenge you committed to at signup. Check in every day — Hit,
+          Miss, or (if you forget) it's marked Failed to report the next morning.</dd>
+        <dt>What's the check-in deadline?</dt>
+        <dd>10:00 AM the next day. Miss that window with no check-in and the system marks it a
+          Failed to report for you — it always pays to report, even a miss.</dd>
+        <dt>How do Bonus Points work?</dt>
+        <dd>Log EHing an FNG, a Fellowship moment, taking a Q, or an Inspire moment from the
+          Bonus Points screen (Menu &rarr; Log Bonus Points). EHing FNG, Q Point, and Inspire
+          each need a Slack link as evidence before they count.</dd>
+        <dt>Can I change my team after signing up?</dt>
+        <dd>Yes — update it from the signup flow at any time; teams are just a shared name
+          (AO-based or custom), not a fixed roster.</dd>
+        <dt>I can't find my check-in page. What do I do?</dt>
+        <dd>Use Menu &rarr; Send Feedback to reach your Site Q, or open the Tracker sheet
+          directly from the dashboard's spreadsheet icon (top right) — every PAX's data lives
+          there as a fallback.</dd>
+        <dt>What does a missed check-in cost me?</dt>
+        <dd>A Miss scores 0; a Failed to report (no check-in at all) scores &minus;1 — reporting
+          a miss honestly is always better than not reporting.</dd>
+      </dl>
+      <div class="announce-modal-actions">
+        <button id="faqCloseBtn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-1pqo.4: free-text + star rating, emailed straight to the Site Q
+       (handleSiteFeedback_, dashboardWebapp.js) — reuses the signup flow's own feedback-star
+       component logic (renderStarRating_) rather than a second copy, see su-step-feedback. -->
+  <div id="siteFeedbackModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <div id="siteFeedbackNotSent">
+        <h2>Send Feedback</h2>
+        <p class="muted">Goes straight to your Site Q, along with your name and app version.</p>
+        <label class="field-label">How is Go30 working for you?</label>
+        <div class="stars" id="siteFeedbackStars"></div>
+        <label class="field-label">Anything we can improve?</label>
+        <textarea id="siteFeedbackComment" rows="3" placeholder="Optional, but helpful"></textarea>
+        <div id="siteFeedbackError" class="error-text hidden"></div>
+        <div class="announce-modal-actions">
+          <button id="siteFeedbackCancelBtn" type="button">Cancel</button>
+          <button class="primary" id="siteFeedbackSendBtn" type="button">Send</button>
+        </div>
+      </div>
+      <div id="siteFeedbackSentNote" class="hidden center" style="padding:8px 0;color:var(--brand);font-weight:bold;font-size:16px;">
+        Thanks for the feedback!
+        <div class="announce-modal-actions" style="justify-content:center;margin-top:14px;">
+          <button id="siteFeedbackDoneBtn" type="button">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -959,7 +1062,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0.2";
+  var STATIC_BUILD_VERSION_ = "2.5.0.3";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2901,6 +3004,86 @@
   function showTeamInfoModal_() { $('teamInfoModal').classList.remove('hidden'); }
   function hideTeamInfoModal_() { $('teamInfoModal').classList.add('hidden'); }
 
+  // ── Settings/tools menu (F3Go30-1pqo.1) ─────────────────────────────────
+  // Menu trigger is #headerIdentityBtn, wrapping #headerName in the persistent header (see its
+  // markup comment). Only entries this stage delivers (F3Go30-1pqo.4/.5/.7/.9 + que4) — Theme/
+  // Notifications/Logout land in Stage 9 once kgzo.5/833s.7 exist (PLAN-08-19.md handoff).
+  function showSettingsMenu_() {
+    // Identity-dependent entries (self-scoped bonus editing, feedback attribution) have nothing
+    // to act on before identify() has ever resolved — How It Works/FAQ don't need identity, so
+    // the trigger itself stays enabled on every step rather than hidden pre-identify.
+    var hasIdentity = !!state.f3Name;
+    $('settingsBonusBtn').disabled = !hasIdentity;
+    $('settingsFeedbackBtn').disabled = !hasIdentity;
+    $('settingsModal').classList.remove('hidden');
+  }
+  function hideSettingsMenu_() { $('settingsModal').classList.add('hidden'); }
+  $('headerIdentityBtn').addEventListener('click', showSettingsMenu_);
+  $('settingsCloseBtn').addEventListener('click', hideSettingsMenu_);
+
+  // F3Go30-1pqo.7 + F3Go30-que4: the menu (present on every step via the persistent header) is
+  // the single mechanism satisfying que4's "How it Works reachable from every page view" AC —
+  // opens the same standalone page (static-pages/src/how-it-works.html, tools/sync-how-it-
+  // works.js) the signup intro card already links to, rather than a second content copy.
+  $('settingsHowBtn').addEventListener('click', function() {
+    hideSettingsMenu_();
+    window.open('how-it-works.html', '_blank', 'noopener');
+  });
+
+  // F3Go30-1pqo.5
+  $('settingsFaqBtn').addEventListener('click', function() {
+    hideSettingsMenu_();
+    $('faqModal').classList.remove('hidden');
+  });
+  $('faqCloseBtn').addEventListener('click', function() { $('faqModal').classList.add('hidden'); });
+
+  // F3Go30-1pqo.9: reuses openBonusManage_ (defined below, under Step: bonus) — the same
+  // function the header's existing trophy-icon shortcut (#bonusBtn) and the dashboard's Bonus
+  // tile (#dBonusTile) already call. This is a third entry point into the same flow, not a new
+  // one.
+  $('settingsBonusBtn').addEventListener('click', function() {
+    if ($('settingsBonusBtn').disabled) return;
+    hideSettingsMenu_();
+    openBonusManage_();
+  });
+
+  // F3Go30-1pqo.4
+  function resetSiteFeedbackForm_() {
+    siteFeedbackState_.rating = 0;
+    $('siteFeedbackComment').value = '';
+    $('siteFeedbackError').classList.add('hidden');
+    $('siteFeedbackNotSent').classList.remove('hidden');
+    $('siteFeedbackSentNote').classList.add('hidden');
+    renderSiteFeedbackStars_();
+  }
+  $('settingsFeedbackBtn').addEventListener('click', function() {
+    if ($('settingsFeedbackBtn').disabled) return;
+    hideSettingsMenu_();
+    resetSiteFeedbackForm_();
+    $('siteFeedbackModal').classList.remove('hidden');
+  });
+  $('siteFeedbackCancelBtn').addEventListener('click', function() { $('siteFeedbackModal').classList.add('hidden'); });
+  $('siteFeedbackDoneBtn').addEventListener('click', function() { $('siteFeedbackModal').classList.add('hidden'); });
+  $('siteFeedbackSendBtn').addEventListener('click', function() {
+    var comment = $('siteFeedbackComment').value.trim();
+    var rating = siteFeedbackState_.rating;
+    if (!rating && !comment) {
+      $('siteFeedbackError').textContent = 'Add a rating or a comment before sending.';
+      $('siteFeedbackError').classList.remove('hidden');
+      return;
+    }
+    $('siteFeedbackError').classList.add('hidden');
+    hideApiError_();
+    setButtonLoading_($('siteFeedbackSendBtn'), true, 'Sending…');
+    callApi('siteFeedback', { f3Name: state.f3Name, email: state.email, rating: rating, comment: comment })
+      .then(function() {
+        $('siteFeedbackNotSent').classList.add('hidden');
+        $('siteFeedbackSentNote').classList.remove('hidden');
+      })
+      .catch(function(err) { showApiError_('siteFeedback', err); })
+      .finally(function() { setButtonLoading_($('siteFeedbackSendBtn'), false); });
+  });
+
   function renderSignupMonthChoices_() {
     var months = signupState.months || {};
     var choices = [{ key: 'current', label: months.current && months.current.label }];
@@ -2922,17 +3105,33 @@
     });
   }
 
-  function renderSignupFeedbackStars_() {
+  // Shared 1-5 star-rating widget, used by both the signup flow's own feedback card
+  // (#suFeedbackStars) and the settings-menu "Send Feedback" modal (#siteFeedbackStars,
+  // F3Go30-1pqo.4) — same interaction, two independent rating values, one implementation.
+  function renderStarRating_(containerId, getRating, onSelect) {
+    var rating = getRating();
     var html = '';
     for (var n = 1; n <= 5; n++) {
-      html += '<button type="button" data-n="' + n + '">' + (n <= signupState.feedbackRating ? '★' : '☆') + '</button>';
+      html += '<button type="button" data-n="' + n + '">' + (n <= rating ? '★' : '☆') + '</button>';
     }
-    $('suFeedbackStars').innerHTML = html;
-    Array.prototype.forEach.call($('suFeedbackStars').querySelectorAll('button'), function(btn) {
-      btn.addEventListener('click', function() {
-        signupState.feedbackRating = parseInt(btn.getAttribute('data-n'), 10);
-        renderSignupFeedbackStars_();
-      });
+    $(containerId).innerHTML = html;
+    Array.prototype.forEach.call($(containerId).querySelectorAll('button'), function(btn) {
+      btn.addEventListener('click', function() { onSelect(parseInt(btn.getAttribute('data-n'), 10)); });
+    });
+  }
+
+  function renderSignupFeedbackStars_() {
+    renderStarRating_('suFeedbackStars', function() { return signupState.feedbackRating; }, function(n) {
+      signupState.feedbackRating = n;
+      renderSignupFeedbackStars_();
+    });
+  }
+
+  var siteFeedbackState_ = { rating: 0 };
+  function renderSiteFeedbackStars_() {
+    renderStarRating_('siteFeedbackStars', function() { return siteFeedbackState_.rating; }, function(n) {
+      siteFeedbackState_.rating = n;
+      renderSiteFeedbackStars_();
     });
   }
 
