@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-FNU8939zxK2gaHNKXPrezWnJHgFNNeig5VUJ/S5LBg8=' 'sha256-P+LXfXCIVhqsq+lqa2XRgUyL7iKhJY8opozYX2bA5A4=' 'sha256-UEZLiBs79o6X9GOQ+IrRa0kiINVD5wczh4tNmxmXByE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-lbFia6s/mBsxHs5wQO47bg9mP1hB7/lfxwp4iNWNC0U=' 'sha256-bkQubYZD7+I6WqqDtyovm0qSwALY5Af0ZAcJGgoI168=' 'sha256-UEZLiBs79o6X9GOQ+IrRa0kiINVD5wczh4tNmxmXByE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1082,7 +1082,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0.19";
+  var STATIC_BUILD_VERSION_ = "2.5.0.20";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1343,14 +1343,38 @@
   // while a checkin POST for a given day is in flight, a newer tap for that same day is queued
   // rather than sent immediately; the instant the in-flight request settles, the LATEST queued
   // send (not any intermediate one) fires — collapsing N rapid taps on one cell into at most two
-  // network requests. Deliberately per-day, not global: two different day cells are independent
-  // writes on the server (handleCheckinSubmit_ writes exactly one cell per call,
-  // dashboardWebapp.js) and are still sent concurrently, same as before. Every queued caller
-  // still gets its own promise, resolved/rejected in tap order once the request that was actually
-  // sent settles — the UI is already optimistic (applyOwnDayWrite_ runs before any of this), so a
-  // superseded tap's success handler briefly re-rendering a stale status is harmless: the
-  // next-attached (later, latest) tap's handler always runs after it and wins.
+  // network requests. Every queued caller still gets its own promise, resolved/rejected in tap
+  // order once the request that was actually sent settles — the UI is already optimistic
+  // (applyOwnDayWrite_ runs before any of this), so a superseded tap's success handler briefly
+  // re-rendering a stale status is harmless: the next-attached (later, latest) tap's handler
+  // always runs after it and wins.
   var checkinCoalesce_ = {};
+
+  // F3Go30-5c2a.4: live HAR evidence (2026-08-26, SIT v2.5.0.19) showed the per-day gate above is
+  // not enough on its own — a PAX rage-tapping BOTH Today and Yesterday in one burst hits two
+  // different coalescing keys, so those POSTs still fired concurrently, same as before this cap,
+  // reproducing the original incident's concurrency shape (real transport failures on
+  // identify/clientTelemetry landed in that same window; see bd notes on this issue). This caps
+  // simultaneous in-flight checkin writes GLOBALLY, across every day key, not just within one:
+  // day cells are independent writes on the server (handleCheckinSubmit_ writes exactly one cell
+  // per call, dashboardWebapp.js), so nothing here merges them — a queued day still gets its own
+  // network request, just delayed until a slot frees, in arrival order (checkinReadyQueue_ is a
+  // FIFO of day-keys, not a stack) so no one day can starve behind a busier one.
+  var CHECKIN_MAX_CONCURRENT_ = 1;
+  var checkinInFlightCount_ = 0;
+  var checkinReadyQueue_ = [];
+
+  /** Starts as many queued day-keys as the cap currently allows. Called after every settle (so a
+   * freed slot is reused immediately) and after every new tap (so an idle cap starts right away).
+   * Skips a key whose queued send was already consumed by a prior call (defensive — should not
+   * happen given each key is only ever queued once at a time, see callApiCheckinCoalesced_). */
+  function pumpCheckinQueue_() {
+    while (checkinInFlightCount_ < CHECKIN_MAX_CONCURRENT_ && checkinReadyQueue_.length) {
+      var key = checkinReadyQueue_.shift();
+      var entry = checkinCoalesce_[key];
+      if (entry && entry.queuedSend && !entry.inFlight) flushCheckinCoalesce_(key);
+    }
+  }
 
   function flushCheckinCoalesce_(key) {
     var entry = checkinCoalesce_[key];
@@ -1359,16 +1383,19 @@
     entry.queuedSend = null;
     entry.waiters = [];
     entry.inFlight = true;
+    checkinInFlightCount_++;
     send().then(function(json) {
       waiters.forEach(function(w) { w.resolve(json); });
       entry.inFlight = false;
+      checkinInFlightCount_--;
       if (entry.queuedSend) {
-        // Healthy: the last attempt succeeded, so it's safe to keep coalescing — send the
-        // latest tap that arrived while this one was in flight.
-        flushCheckinCoalesce_(key);
+        // Healthy: the last attempt succeeded, so it's safe to keep coalescing — queue the
+        // latest tap that arrived while this one was in flight for its turn at the cap.
+        checkinReadyQueue_.push(key);
       } else {
         delete checkinCoalesce_[key];
       }
+      pumpCheckinQueue_();
     }, function(err) {
       // A failure means THIS MOMENT is unhealthy for this day's writes. Auto-continuing the
       // chain here (as the success branch does) would retry the next queued tap, and if it also
@@ -1378,14 +1405,18 @@
       // fail the WHOLE queued backlog for this day together (including anything that arrived
       // during this failed attempt) — matching the pre-coalescing behavior where a burst's
       // requests all failed in parallel around the same ~timeout mark — and let the PAX's own
-      // next tap start a fresh, independent attempt rather than an inherited retry chain.
+      // next tap start a fresh, independent attempt rather than an inherited retry chain. The
+      // freed slot still goes to whichever OTHER day is next in line, so one unhealthy day
+      // cannot starve the rest of the queue.
       var stranded = entry.waiters;
       entry.queuedSend = null;
       entry.waiters = [];
       entry.inFlight = false;
+      checkinInFlightCount_--;
       delete checkinCoalesce_[key];
       waiters.forEach(function(w) { w.reject(err); });
       stranded.forEach(function(w) { w.reject(err); });
+      pumpCheckinQueue_();
     });
   }
 
@@ -1397,8 +1428,13 @@
     var promise = new Promise(function(resolve, reject) {
       entry.waiters.push({ resolve: resolve, reject: reject });
     });
+    // A key already holding a queued send (not yet started) is already in checkinReadyQueue_ —
+    // overwriting queuedSend in place (superseding it with this newer tap) keeps that same queue
+    // position rather than re-queuing behind other days a second time.
+    var alreadyQueued = !!entry.queuedSend;
     entry.queuedSend = send;
-    if (!entry.inFlight) flushCheckinCoalesce_(key);
+    if (!entry.inFlight && !alreadyQueued) checkinReadyQueue_.push(key);
+    pumpCheckinQueue_();
     return promise;
   }
 
