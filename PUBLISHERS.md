@@ -23,8 +23,8 @@ each namespaced under its own top-level folder — the same multi-app-per-static
 |---|---|---|---|
 | `dist/sit` | F3Go30 (`tools/build-static-pages.js` + `publish-static-pages.js`) | sit | <https://f3go30.github.io/static-pages/dist/sit/> |
 | `dist/prod` | F3Go30 (same pipeline, PROD build) | prod | <https://f3go30.github.io/static-pages/dist/prod/> |
-| `ballot/sit` | RankChoiceVoting (`tools/publish-static-pages.js`, SIT target) | sit | <https://f3go30.github.io/static-pages/ballot/sit/> |
-| `ballot/prod` | RankChoiceVoting (same pipeline, PROD target) | prod | <https://f3go30.github.io/static-pages/ballot/prod/> |
+| `ballot/sit` | RankChoiceVoting (`tools/static-pages.js` via `gas-static`) | sit | <https://f3go30.github.io/static-pages/ballot/sit/> |
+| `ballot/prod` | RankChoiceVoting (same pipeline, PROD build) | prod | <https://f3go30.github.io/static-pages/ballot/prod/> |
 
 RankChoiceVoting also publishes a single-environment build to `nuuc-it/Static` at `pub/ballot` —
 see that repo's `PUBLISHERS.md`.
