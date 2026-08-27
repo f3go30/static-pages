@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-lbFia6s/mBsxHs5wQO47bg9mP1hB7/lfxwp4iNWNC0U=' 'sha256-bkQubYZD7+I6WqqDtyovm0qSwALY5Af0ZAcJGgoI168=' 'sha256-UEZLiBs79o6X9GOQ+IrRa0kiINVD5wczh4tNmxmXByE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-PH8YjeXMyZrbsxoJjmjj6Fm8FgrRAP0x0rTYfIVL6MY=' 'sha256-EL59qq0lS12RkPEu38MksG4IEjzMAaCpOCsFM29A20Q=' 'sha256-LlA8zqmc9GakHeR1R6+kBDhtl/WOvL6MLM7Nz28FJ1A='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1082,7 +1082,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0.20";
+  var STATIC_BUILD_VERSION_ = "2.5.0.21";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1698,13 +1698,29 @@
     stopReconnectPoll_();
   }
 
+  // F3Go30-5c2a.5: `btn.dataset.saving` is this function's OWN loading flag, checked instead of
+  // `btn.disabled` itself — a button's disabled attribute is not exclusively ours to read. Other
+  // renders (renderCheckinStatus_, renderSelectionPanel_) legitimately flip `.disabled` on these
+  // same buttons for unrelated reasons (an unavailable day, a newly selected date) and can land
+  // WHILE a submit is still in flight (silentResumeRefresh_'s visibilitychange handler is the
+  // most direct trigger, but a same-day coalesced tap's own settle-time re-render can race it
+  // too). Before this flag existed, isLoading's `if (!btn.disabled)` treated any such external
+  // re-enable as "not currently loading" and re-captured dataset.originalText off whatever
+  // textContent happened to be at that moment — which, mid-submit, is this function's OWN
+  // 'Saving…' placeholder. That permanently overwrote the real original label: every later
+  // isLoading:false restored 'Saving…' forever, with disabled/formatting still tracking the true
+  // state correctly (only the label was stuck) — live HAR evidence, SIT v2.5.0.20, 2026-08-26,
+  // "Missed it" (todayNoBtn/yesterdayNoBtn). Owning the flag ourselves closes that regardless of
+  // which other render raced it.
   function setButtonLoading_(btn, isLoading, loadingText) {
     if (isLoading) {
-      if (!btn.disabled) btn.dataset.originalText = btn.textContent;
+      if (btn.dataset.saving !== '1') btn.dataset.originalText = btn.textContent;
+      btn.dataset.saving = '1';
       btn.textContent = loadingText || 'Working…';
       btn.disabled = true;
     } else {
       btn.textContent = btn.dataset.originalText || btn.textContent;
+      delete btn.dataset.saving;
       btn.disabled = false;
     }
   }
@@ -2657,10 +2673,18 @@
     yesBtn.classList.toggle('current', status === 'done');
     noBtn.classList.toggle('current', status === 'missed');
     noneBtn.classList.toggle('current', status === 'pending');
+    // F3Go30-5c2a.5: skip a button that's mid-submit (dataset.saving, set by setButtonLoading_) —
+    // this render can land while a checkin for this same day is still in flight (silentResumeRefresh_
+    // fires on visibilitychange with no regard for an open submit; a same-day coalesced tap's own
+    // settle-time call here is the other route), and forcing `.disabled` off from under it let the
+    // PAX re-tap mid-flight, which is what corrupted setButtonLoading_'s captured original label in
+    // the first place (see that function's docstring). The in-flight request's own settle handler
+    // owns this button's disabled/text state and will restore it correctly.
     var disabled = status === 'unavailable';
-    yesBtn.disabled = disabled;
-    noBtn.disabled = disabled;
-    noneBtn.disabled = disabled;
+    [yesBtn, noBtn, noneBtn].forEach(function(btn) {
+      if (btn.dataset.saving === '1') return;
+      btn.disabled = disabled;
+    });
   }
 
   function submitCheckin_(btn, day, value) {
@@ -2957,8 +2981,12 @@
 
   function renderSelectionPanel_(dateIso) {
     state.selectedDateIso = dateIso;
+    // F3Go30-5c2a.5: only clears a STALE disabled button left over from a PRIOR selected date's
+    // submit — dataset.saving (set by setButtonLoading_) tells the two apart from a submit for
+    // THIS date that is still genuinely in flight, which must be left alone for its own settle
+    // handler to resolve (same race as renderCheckinStatus_, see setButtonLoading_'s docstring).
     [$('selYesBtn'), $('selNoBtn'), $('selNoneBtn')].forEach(function(btn) {
-      if (btn.disabled) setButtonLoading_(btn, false);
+      if (btn.disabled && btn.dataset.saving !== '1') setButtonLoading_(btn, false);
     });
     var entry = monthGridEntryFor_(dateIso);
     var status = entry ? entry.status
@@ -2974,7 +3002,9 @@
     $('selNoneBtn').classList.toggle('current', status === 'pending');
     $('selFailBtn').classList.toggle('current', status === 'absent');
     var isPast = dateIso < state.todayIso;
-    $('selFailBtn').disabled = !isPast;
+    // Same dataset.saving guard as above: don't override availability onto a button that's
+    // mid-submit for this date.
+    if ($('selFailBtn').dataset.saving !== '1') $('selFailBtn').disabled = !isPast;
     $('selFailBtn').title = isPast ? '' : 'Failed can only be set for a past day';
   }
 
