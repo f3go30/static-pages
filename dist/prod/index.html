@@ -8,6 +8,18 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="Go30">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<!-- F3Go30-ah3v: belt-and-braces against leaking the ?id bearer token in the URL via the
+     Referer header. Not a live concern today (default strict-origin-when-cross-origin already
+     sends only the origin to script.google.com) but free, and unlike the CSP meta below this
+     needs no build-time computation, so it's present unconditionally in the unbuilt source too. -->
+<meta name="referrer" content="no-referrer">
+<!-- F3Go30-ah3v: tools/build-static-pages.js replaces this comment with a real
+     <meta http-equiv="Content-Security-Policy"> tag, computed AFTER version/webapp-URL stamping
+     (so the script-src hashes match the exact bytes actually served) — see buildCsp_. Left as an
+     inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
+     stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
+     would break every inline script there with no compensating benefit. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-4cZ55wvyCmvKDZ1tPPV5BkUc7L98Y25aMMil4VEfY54=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-Njqm9yIRPJivh66+MuygNZTqfOeENdZaoO64b4rlEpg='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -261,6 +273,9 @@
   .page-banner-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .page-banner button { background: none; border: none; color: var(--warn-fg); text-decoration: underline; cursor: pointer; font-size: 14px; padding: 0; font-family: inherit; flex-shrink: 0; }
   .page-banner-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  /* F3Go30-9u68: inline info-splash trigger next to a field-label (e.g. signup's Team type) —
+     no border/background of its own so it reads as part of the label, not a separate button. */
+  .info-btn { background: none; border: none; cursor: pointer; font-size: 15px; padding: 0; margin-left: 4px; vertical-align: middle; line-height: 1; }
   .announce-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 1000; }
   /* F3Go30-g9bi live-verify fix: .hidden{display:none} (declared earlier in this stylesheet) and
      .announce-overlay{display:flex} above are both single-class selectors of equal specificity,
@@ -285,8 +300,25 @@
   #announcementText > :last-child { margin-bottom: 0; }
   .announce-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
   .announce-modal-actions button { font-family: inherit; font-size: 14px; padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+  /* button.primary's width:100% is meant for standalone full-width CTAs; override it here so a
+     primary button sharing this flex row with a plain button (siteFeedback Send, signupReminder
+     Sign Up) sizes to its own content instead of stretching to fill the row and squeezing its
+     sibling down to a sliver. */
+  .announce-modal-actions button.primary { width: auto; }
   #announcementRemindLaterBtn { background: none; border: 1px solid var(--border); color: var(--text); }
   #announcementDismissBtn { background: var(--brand); border: 1px solid var(--brand); color: #fff; }
+  /* F3Go30-1pqo: settings/tools menu + its content-only sub-modals (FAQ) — all three reuse
+     .announce-overlay/.announce-modal (F3Go30-g9bi) rather than a new overlay component, per
+     the pattern established in F3Go30-9u68's #teamInfoModal (none of these ever show at once). */
+  .header-name-btn { cursor: pointer; background: none; border: none; font: inherit; color: inherit; padding: 0; text-align: left; display: flex; align-items: center; gap: 5px; }
+  .header-name-btn .header-name { display: inline; }
+  .header-name-btn .menu-caret { font-size: 12px; opacity: .7; }
+  .settings-menu-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+  .settings-menu-item { display: block; width: 100%; text-align: left; font: inherit; font-size: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); cursor: pointer; }
+  .settings-menu-item:disabled { color: var(--text-faint); cursor: default; opacity: .6; }
+  .faq-list dt { font-weight: bold; color: var(--brand); margin: 14px 0 4px; font-size: 15px; }
+  .faq-list dt:first-child { margin-top: 0; }
+  .faq-list dd { margin: 0; font-size: 15px; line-height: 1.4; color: var(--text); }
   .date-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
   .date-nav-btn { width: 44px; height: 44px; border-radius: 8px; border: 2px solid var(--brand); background: var(--card-bg); color: var(--brand); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
   .date-nav-btn svg { width: 20px; height: 20px; display: block; }
@@ -366,10 +398,19 @@
            by showStep()/HEADER_BACK_TARGET_ rather than a per-card Back button, so it survives
            whichever step is on screen instead of being torn down and rebuilt with each. -->
       <button id="headerBackBtn" class="more-btn hidden" title="Back">&larr;</button>
-      <div>
-        <div class="header-name" id="headerName"></div>
-        <div class="header-sub" id="headerSub"></div>
-      </div>
+      <!-- F3Go30-1pqo.1: settings/tools menu trigger. Wraps the existing #headerName/#headerSub
+           text nodes (left as-is — updateHeaderIdentity_/applyServerConfig_ set their
+           textContent directly and are unaffected) rather than making the bare div clickable,
+           so the trigger is a real, keyboard-reachable <button> on every step (the header is
+           sticky and outside .wrap, so this one mount point covers identify/checkin/dashboard/
+           bonus/signup without a per-step audit). -->
+      <button type="button" id="headerIdentityBtn" class="header-name-btn" title="Menu">
+        <div>
+          <div class="header-name" id="headerName"></div>
+          <div class="header-sub" id="headerSub"></div>
+        </div>
+        <span class="menu-caret">&#9662;</span>
+      </button>
     </div>
     <div class="header-right">
       <!-- F3Go30-5nfj.5: lives in the persistent header (never hidden by showStep()) so it
@@ -389,9 +430,14 @@
   <div id="apiErrorBanner" class="api-error-banner hidden">
     <strong id="apiErrorHeadline">Something went wrong.</strong>
     <span id="apiErrorServerGuidance">Please try again, or refresh the browser and try again. If the problem persists,
-      notify <span id="apiErrorSiteQName">your Site Q</span><a id="apiErrorContactLink" class="hidden" href="#">(email)</a>.</span>
+      notify <span id="apiErrorSiteQName">your Site Q</span> <a id="apiErrorContactLink" class="hidden" href="#">(email)</a>.</span>
     <span id="apiErrorNetworkGuidance" class="hidden">Check your internet connection and try again — nothing was lost.</span>
     <div id="apiErrorDetail" class="api-error-detail"></div>
+    <!-- F3Go30-n40u: shown only once a transport outage has run past
+         RECONNECT_POLL_RELOAD_OFFER_AFTER_MS_ — a full reload is the right hammer for a stuck
+         client-side cache, but it must be PAX-initiated (loses scroll/unsaved input), never
+         automatic. -->
+    <button id="apiErrorReloadBtn" class="secondary hidden" type="button" style="margin-top:8px;">Reload page</button>
   </div>
 
   <!-- F3Go30-ubwl.3: shown on arrival from a GAS redirect (?from=gas — F3Go30-ubwl §Marker
@@ -430,6 +476,128 @@
       <div class="announce-modal-actions">
         <button id="announcementRemindLaterBtn" type="button">Remind me later</button>
         <button id="announcementDismissBtn" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-9u68: static (not config-driven) info splash for the signup Team field — reuses
+       the announcement splash's .announce-overlay/.announce-modal markup and CSS (F3Go30-g9bi)
+       rather than a second overlay component, since the two never show at once (signup vs.
+       identify/dashboard) and the visual language should match. -->
+  <div id="teamInfoModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>Why your team matters</h2>
+      <div>
+        <p>Your team is your accountability and support structure for this Go30 month — the
+          people who notice if you go missing and cheer when you hit a milestone. Go30 works
+          because someone else knows what you committed to.</p>
+        <p><strong>AO-based team:</strong> pick your regular F3 AO (e.g. Iron Mtn, The Ranch) —
+          your teammates are the other PAX who signed up from that same AO.</p>
+        <p><strong>Custom team:</strong> not tied to one AO, or want to team up with specific
+          PAX? Type a team name (a Slack channel, a nickname your crew agrees on) — anyone who
+          types that same name lands on your team.</p>
+      </div>
+      <div class="announce-modal-actions">
+        <button id="teamInfoCloseBtn" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-1pqo.1: settings/tools menu, opened by tapping the PAX name in the persistent
+       header (#headerName, always present outside .wrap — see the header markup below). Entries
+       this stage delivers: F3Go30-1pqo.4/.5/.7/.9 + que4, plus F3Go30-1pqo.10's client-only
+       Logout. Theme/Notifications (F3Go30-1pqo.3/.8) and the full server-invalidating Logout
+       (F3Go30-1pqo.2) are added once their own infrastructure (kgzo.5, 833s.7) lands — see
+       PLAN-08-19.md Stage 3 handoff / F3Go30-1pqo.10's description for the split rationale. -->
+  <div id="settingsModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>Menu</h2>
+      <div class="settings-menu-list">
+        <button type="button" class="settings-menu-item" id="settingsHowBtn">How It Works</button>
+        <button type="button" class="settings-menu-item" id="settingsFaqBtn">FAQ</button>
+        <button type="button" class="settings-menu-item" id="settingsBonusBtn">Log Bonus Points</button>
+        <button type="button" class="settings-menu-item" id="settingsFeedbackBtn">Send Feedback</button>
+        <button type="button" class="settings-menu-item" id="settingsLogoutBtn">Logout</button>
+      </div>
+      <div class="announce-modal-actions">
+        <button id="settingsCloseBtn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-1pqo.5: FAQ content lives here directly (like #teamInfoModal above) rather than a
+       synced standalone page (tools/sync-how-it-works.js's pattern) — it's shown from exactly
+       one place (this menu), so there's no second copy for a sync step to guard against
+       diverging. -->
+  <div id="faqModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>FAQ</h2>
+      <dl class="faq-list">
+        <dt>What counts as a "Hit"?</dt>
+        <dd>Doing the one daily challenge you committed to at signup. Check in every day — Hit,
+          Miss, or (if you forget) it's marked Failed to report the next morning.</dd>
+        <dt>What's the check-in deadline?</dt>
+        <dd>10:00 AM the next day. Miss that window with no check-in and the system marks it a
+          Failed to report for you — it always pays to report, even a miss.</dd>
+        <dt>How do Bonus Points work?</dt>
+        <dd>Log EHing an FNG, a Fellowship moment, taking a Q, or an Inspire moment from the
+          Bonus Points screen (Menu &rarr; Log Bonus Points). EHing FNG, Q Point, and Inspire
+          each need a Slack link as evidence before they count.</dd>
+        <dt>Can I change my team after signing up?</dt>
+        <dd>Yes — update it from the signup flow at any time; teams are just a shared name
+          (AO-based or custom), not a fixed roster.</dd>
+        <dt>I can't find my check-in page. What do I do?</dt>
+        <dd>Use Menu &rarr; Send Feedback to reach your Site Q, or open the Tracker sheet
+          directly from the dashboard's spreadsheet icon (top right) — every PAX's data lives
+          there as a fallback.</dd>
+        <dt>What does a missed check-in cost me?</dt>
+        <dd>A Miss scores 0; a Failed to report (no check-in at all) scores &minus;1 — reporting
+          a miss honestly is always better than not reporting.</dd>
+      </dl>
+      <div class="announce-modal-actions">
+        <button id="faqCloseBtn" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-1pqo.4: free-text + star rating, emailed straight to the Site Q
+       (handleSiteFeedback_, dashboardWebapp.js) — reuses the signup flow's own feedback-star
+       component logic (renderStarRating_) rather than a second copy, see su-step-feedback. -->
+  <div id="siteFeedbackModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <div id="siteFeedbackNotSent">
+        <h2>Send Feedback</h2>
+        <p class="muted">Goes straight to your Site Q, along with your name and app version.</p>
+        <label class="field-label">How is Go30 working for you?</label>
+        <div class="stars" id="siteFeedbackStars"></div>
+        <label class="field-label">Anything we can improve?</label>
+        <textarea id="siteFeedbackComment" rows="3" placeholder="Optional, but helpful"></textarea>
+        <div id="siteFeedbackError" class="error-text hidden"></div>
+        <div class="announce-modal-actions">
+          <button id="siteFeedbackCancelBtn" type="button">Cancel</button>
+          <button class="primary" id="siteFeedbackSendBtn" type="button">Send</button>
+        </div>
+      </div>
+      <div id="siteFeedbackSentNote" class="hidden center" style="padding:8px 0;color:var(--brand);font-weight:bold;font-size:16px;">
+        Thanks for the feedback!
+        <div class="announce-modal-actions" style="justify-content:center;margin-top:14px;">
+          <button id="siteFeedbackDoneBtn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- F3Go30-xyvs: SignupReminder popup — prompts an already-identified PAX to sign up for next
+       month once that tracker exists and they haven't yet. Reuses the announcement splash's
+       .announce-overlay/.announce-modal markup/CSS (F3Go30-g9bi) rather than a fourth overlay
+       component. -->
+  <div id="signupReminderModal" class="announce-overlay hidden">
+    <div class="announce-modal">
+      <h2>Sign up for <span id="signupReminderMonthLabel"></span>?</h2>
+      <p>You're not signed up for <span id="signupReminderMonthLabel2"></span> yet — lock in your goals now so you're ready when the month starts.</p>
+      <div class="announce-modal-actions">
+        <button id="signupReminderLaterBtn" type="button">Remind me later</button>
+        <button class="primary" id="signupReminderSignUpBtn" type="button">Sign Up</button>
       </div>
     </div>
   </div>
@@ -511,7 +679,7 @@
           </div>
         </div>
 
-        <label class="field-label">Team type</label>
+        <label class="field-label">Team type <button type="button" id="suTeamInfoBtn" class="info-btn" aria-label="Why does my team matter?">ℹ️</button></label>
         <div class="team-type-row">
           <label class="team-type-option" id="suTtAoOption"><input type="radio" name="suTt" value="ao"> AO-based</label>
           <label class="team-type-option" id="suTtOtherOption"><input type="radio" name="suTt" value="other"> Custom Team</label>
@@ -540,6 +708,7 @@
           Ok to send me reminder emails when it looks like I'm late.
         </label>
 
+        <div id="suInfoError" class="error-text hidden"></div>
         <button class="primary" id="suInfoNextBtn">Continue</button>
         <button class="secondary" id="suInfoBackBtn">Back</button>
       </div>
@@ -915,7 +1084,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.5.0";
+  var STATIC_BUILD_VERSION_ = "2.6.0";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1100,18 +1269,26 @@
   /** The single point where a below-HTTP failure becomes a PAX-readable one. Flagged so the
    * banner can drop the Site-Q escalation (a connectivity problem is not the Site Q's to fix)
    * and so the retry below can tell a transport failure from a server that answered. */
-  function makeTransportError_() {
+  function makeTransportError_(extra) {
     var err = new Error(NETWORK_ERROR_MESSAGE_);
     err.isTransport = true;
+    if (extra) Object.assign(err, extra);
     return err;
   }
 
   /** One attempt, bounded. Resolves with the raw Response (status handling stays in callApi);
    * rejects with a flagged transport error for anything that dies below HTTP, including the
-   * timeout — the abort and a genuine network drop are the same thing to the PAX. */
+   * timeout — the abort and a genuine network drop are the same thing to the PAX (the banner copy
+   * and isTransport-driven behaviour are unchanged, F3Go30-5c2a.2 AC4). The rejection itself does
+   * carry the distinction now, for telemetry only: abortedAtTimeout tells whether OUR OWN
+   * AbortController fired at timeoutMs, vs. fetch rejecting on its own (a redirect/connection
+   * dying below HTTP), and elapsedMs is recorded on both branches so the two are separable purely
+   * off elapsed time even on an old client that predates abortedAtTimeout (AC3). */
   function fetchAttempt_(url, bodyJson, timeoutMs) {
     var controller = new AbortController();
-    var timeoutId = setTimeout(function() { controller.abort(); }, timeoutMs);
+    var startedAt = Date.now();
+    var abortedByTimeout = false;
+    var timeoutId = setTimeout(function() { abortedByTimeout = true; controller.abort(); }, timeoutMs);
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -1122,14 +1299,40 @@
       return res;
     }, function() {
       clearTimeout(timeoutId);
-      throw makeTransportError_();
+      throw makeTransportError_({ abortedAtTimeout: abortedByTimeout, elapsedMs: Date.now() - startedAt });
     });
+  }
+
+  /** F3Go30-5c2a.1: extracts identity of the Apps Script redirect echo endpoint (script.
+   * googleusercontent.com/macros/echo?user_content_key=...) a response actually resolved to, so
+   * two requests' telemetry can be compared for "same key or different key" — the evidence the
+   * parent bug (F3Go30-5c2a) needs to confirm or kill the stale-cached-redirect hypothesis.
+   * Never returns the raw key: only a stable hash (reusing hashString_, the same non-security hash
+   * already used to namespace TOKEN_STORAGE_KEY_), since user_content_key is a capability-bearing
+   * token that must not land in Axiom verbatim (AC2/AC5). Never throws — res.url can be absent or
+   * malformed and this must still degrade to "no evidence" rather than break the caller. */
+  function extractEchoKeyInfo_(res) {
+    var info = { redirected: false, echoKeyHash: '' };
+    try {
+      info.redirected = !!(res && res.redirected);
+      var url = res && res.url;
+      var m = url ? /[?&]user_content_key=([^&]+)/.exec(url) : null;
+      if (m) info.echoKeyHash = hashString_(decodeURIComponent(m[1]));
+    } catch (e) { /* best effort — missing evidence, not a crash */ }
+    return info;
   }
 
   // F3Go30-5nfj.5: reference-counted, not a boolean — more than one request can be in flight at
   // once (e.g. the PAX clicking multiple checkin buttons before earlier ones settle), so the
   // indicator must stay visible until the LAST outstanding request settles, not just the first.
   var pendingRequestCount_ = 0;
+
+  // F3Go30-os03 D5/Addendum 3: a monotonic, never-reset counter ordering identify reads against
+  // this PAX's own write acks — a plain integer, not Date.now(), because a wall clock is not
+  // monotonic (NTP correction, DST, a manual clock change) and the scenario this exists for is an
+  // installed PWA left open for days, exactly where a backwards jump stops being theoretical. See
+  // reconcileWithLocalWrites_ for how it's used.
+  var requestGen_ = 0;
 
   function updateSyncingIndicator_() {
     var el = $('checkinSyncingNote');
@@ -1142,6 +1345,108 @@
   // back to CMD_ — so every pre-existing check-in call site is unchanged; only the signup step
   // passes 'signup'. Leaving it a page constant would route signup actions into the check-in
   // dispatcher, which would reject them as unknown_action.
+  // F3Go30-5c2a.4: rapid repeated taps on the SAME day cell (a PAX changing their mind, or a
+  // slow round trip inviting a re-tap) each fired their own checkin POST, producing a burst of
+  // near-simultaneous requests against the flaky Apps Script echo-redirect leg — the concurrency
+  // shape behind the 2026-08-25 SIT incident (F3Go30-5c2a). callApi coalesces per day below:
+  // while a checkin POST for a given day is in flight, a newer tap for that same day is queued
+  // rather than sent immediately; the instant the in-flight request settles, the LATEST queued
+  // send (not any intermediate one) fires — collapsing N rapid taps on one cell into at most two
+  // network requests. Every queued caller still gets its own promise, resolved/rejected in tap
+  // order once the request that was actually sent settles — the UI is already optimistic
+  // (applyOwnDayWrite_ runs before any of this), so a superseded tap's success handler briefly
+  // re-rendering a stale status is harmless: the next-attached (later, latest) tap's handler
+  // always runs after it and wins.
+  var checkinCoalesce_ = {};
+
+  // F3Go30-5c2a.4: live HAR evidence (2026-08-26, SIT v2.5.0.19) showed the per-day gate above is
+  // not enough on its own — a PAX rage-tapping BOTH Today and Yesterday in one burst hits two
+  // different coalescing keys, so those POSTs still fired concurrently, same as before this cap,
+  // reproducing the original incident's concurrency shape (real transport failures on
+  // identify/clientTelemetry landed in that same window; see bd notes on this issue). This caps
+  // simultaneous in-flight checkin writes GLOBALLY, across every day key, not just within one:
+  // day cells are independent writes on the server (handleCheckinSubmit_ writes exactly one cell
+  // per call, dashboardWebapp.js), so nothing here merges them — a queued day still gets its own
+  // network request, just delayed until a slot frees, in arrival order (checkinReadyQueue_ is a
+  // FIFO of day-keys, not a stack) so no one day can starve behind a busier one.
+  var CHECKIN_MAX_CONCURRENT_ = 1;
+  var checkinInFlightCount_ = 0;
+  var checkinReadyQueue_ = [];
+
+  /** Starts as many queued day-keys as the cap currently allows. Called after every settle (so a
+   * freed slot is reused immediately) and after every new tap (so an idle cap starts right away).
+   * Skips a key whose queued send was already consumed by a prior call (defensive — should not
+   * happen given each key is only ever queued once at a time, see callApiCheckinCoalesced_). */
+  function pumpCheckinQueue_() {
+    while (checkinInFlightCount_ < CHECKIN_MAX_CONCURRENT_ && checkinReadyQueue_.length) {
+      var key = checkinReadyQueue_.shift();
+      var entry = checkinCoalesce_[key];
+      if (entry && entry.queuedSend && !entry.inFlight) flushCheckinCoalesce_(key);
+    }
+  }
+
+  function flushCheckinCoalesce_(key) {
+    var entry = checkinCoalesce_[key];
+    var send = entry.queuedSend;
+    var waiters = entry.waiters;
+    entry.queuedSend = null;
+    entry.waiters = [];
+    entry.inFlight = true;
+    checkinInFlightCount_++;
+    send().then(function(json) {
+      waiters.forEach(function(w) { w.resolve(json); });
+      entry.inFlight = false;
+      checkinInFlightCount_--;
+      if (entry.queuedSend) {
+        // Healthy: the last attempt succeeded, so it's safe to keep coalescing — queue the
+        // latest tap that arrived while this one was in flight for its turn at the cap.
+        checkinReadyQueue_.push(key);
+      } else {
+        delete checkinCoalesce_[key];
+      }
+      pumpCheckinQueue_();
+    }, function(err) {
+      // A failure means THIS MOMENT is unhealthy for this day's writes. Auto-continuing the
+      // chain here (as the success branch does) would retry the next queued tap, and if it also
+      // fails, the one after that — each waiting its own full timeout — so a PAX tapping through
+      // an unstable stretch could see a button stuck for several timeout cycles stacked
+      // end-to-end, far longer than any single request ever took before this change. Instead,
+      // fail the WHOLE queued backlog for this day together (including anything that arrived
+      // during this failed attempt) — matching the pre-coalescing behavior where a burst's
+      // requests all failed in parallel around the same ~timeout mark — and let the PAX's own
+      // next tap start a fresh, independent attempt rather than an inherited retry chain. The
+      // freed slot still goes to whichever OTHER day is next in line, so one unhealthy day
+      // cannot starve the rest of the queue.
+      var stranded = entry.waiters;
+      entry.queuedSend = null;
+      entry.waiters = [];
+      entry.inFlight = false;
+      checkinInFlightCount_--;
+      delete checkinCoalesce_[key];
+      waiters.forEach(function(w) { w.reject(err); });
+      stranded.forEach(function(w) { w.reject(err); });
+      pumpCheckinQueue_();
+    });
+  }
+
+  function callApiCheckinCoalesced_(key, send) {
+    var entry = checkinCoalesce_[key];
+    if (!entry) {
+      entry = checkinCoalesce_[key] = { inFlight: false, queuedSend: null, waiters: [] };
+    }
+    var promise = new Promise(function(resolve, reject) {
+      entry.waiters.push({ resolve: resolve, reject: reject });
+    });
+    // A key already holding a queued send (not yet started) is already in checkinReadyQueue_ —
+    // overwriting queuedSend in place (superseding it with this newer tap) keeps that same queue
+    // position rather than re-queuing behind other days a second time.
+    var alreadyQueued = !!entry.queuedSend;
+    entry.queuedSend = send;
+    if (!entry.inFlight && !alreadyQueued) checkinReadyQueue_.push(key);
+    pumpCheckinQueue_();
+    return promise;
+  }
+
   function callApi(action, payload, cmd) {
     var body = Object.assign({}, payload, {
       action: action,
@@ -1157,37 +1462,274 @@
     var bodyJson = JSON.stringify(body);
     var mayRetry = RETRYABLE_ACTIONS_.indexOf(action) !== -1;
     var timeoutMs = mayRetry ? REQUEST_TIMEOUT_MS_ : WRITE_TIMEOUT_MS_;
-    pendingRequestCount_++;
-    updateSyncingIndicator_();
-    return fetchAttempt_(url, bodyJson, timeoutMs).catch(function(err) {
-      // Exactly one retry, and only for a read that died below HTTP. A server that ANSWERED —
-      // any status, any json.ok:false — is not re-asked: it has already made its decision, and
-      // repeating the call would only double the load while returning the same answer.
-      if (!mayRetry || !err || !err.isTransport) throw err;
-      return fetchAttempt_(url, bodyJson, timeoutMs);
-    }).then(function(res) {
-      if (!res.ok) throw new Error('Server returned HTTP ' + res.status);
-      return res.json();
-    }).then(function(json) {
-      if (!json.ok) throw new Error(json.error || 'Server reported an error with no detail');
-      return json;
-    }).finally(function() {
-      pendingRequestCount_--;
+
+    function sendNow_() {
+      // F3Go30-5c2a.1: captured off the Response as soon as one exists (both an ok and a non-ok
+      // HTTP response still carry res.url/res.redirected — only a below-HTTP transport failure
+      // never gets a Response at all). Stashed here so both the error paths below and the success
+      // sample can attach it without re-deriving it or holding the Response itself past its use.
+      var echoKeyInfo_ = null;
+      pendingRequestCount_++;
       updateSyncingIndicator_();
+      return fetchAttempt_(url, bodyJson, timeoutMs).catch(function(err) {
+        // Exactly one retry, and only for a read that died below HTTP. A server that ANSWERED —
+        // any status, any json.ok:false — is not re-asked: it has already made its decision, and
+        // repeating the call would only double the load while returning the same answer.
+        if (!mayRetry || !err || !err.isTransport) throw err;
+        return fetchAttempt_(url, bodyJson, timeoutMs);
+      }).then(function(res) {
+        echoKeyInfo_ = extractEchoKeyInfo_(res);
+        if (!res.ok) throw Object.assign(new Error('Server returned HTTP ' + res.status), echoKeyInfo_);
+        return res.json();
+      }).then(function(json) {
+        if (!json.ok) throw Object.assign(new Error(json.error || 'Server reported an error with no detail'), echoKeyInfo_);
+        return json;
+      }).then(function(json) {
+        // F3Go30-xyri: piggyback the queued-telemetry upload on any successful round trip rather
+        // than opening a dedicated connection for it — fire-and-forget, never blocks/degrades the
+        // call that triggered it. Excludes the upload action itself so a successful flush doesn't
+        // immediately try to flush its own (now-empty) queue again.
+        if (action !== 'clientTelemetry') {
+          // F3Go30-5c2a.1 AC4: sample the echo key on every successful round trip too — piggybacked
+          // on this same queue/flush path, no dedicated connection — so key reuse vs. fresh-per-
+          // request can be established from healthy traffic, not just failures.
+          captureClientTelemetry_('echoKey', action, echoKeyInfo_);
+          flushClientTelemetryQueue_();
+        }
+        return json;
+      }).finally(function() {
+        pendingRequestCount_--;
+        updateSyncingIndicator_();
+      });
+    }
+
+    if (action === 'checkin') {
+      return callApiCheckinCoalesced_(String(payload && payload.day), sendNow_);
+    }
+    return sendNow_();
+  }
+
+  // ── F3Go30-xyri: client-side error telemetry ──────────────────────────────────────────────
+  // Captures any client-observed error/crash into a bounded localStorage queue, uploaded
+  // opportunistically (see callApi above) once connectivity is available. See the issue's
+  // addenda for why each field is here: stack/isTransport/online/swState exist because a bare
+  // frequency count wasn't enough to root-cause the FEEDBACK-failed-to-connect.png report (the
+  // PAX's network was demonstrably fine while this app kept failing) — each field is a piece of
+  // evidence toward telling "genuinely offline" apart from "something stuck client-side."
+
+  var CLIENT_TELEMETRY_QUEUE_KEY_ = 'go30ClientTelemetryQueue:v1';
+  var CLIENT_TELEMETRY_QUEUE_MAX_ = 25;
+  var CLIENT_TELEMETRY_QUEUE_MAX_AGE_MS_ = 1000 * 60 * 60 * 24 * 7; // 7 days
+  var CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_ = 10;
+
+  function makeClientTelemetryId_() {
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + '-' + Math.random().toString(16).slice(2));
+  }
+
+  function loadClientTelemetryQueue_() {
+    try {
+      var raw = localStorage.getItem(CLIENT_TELEMETRY_QUEUE_KEY_);
+      var list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  function saveClientTelemetryQueue_(list) {
+    try { localStorage.setItem(CLIENT_TELEMETRY_QUEUE_KEY_, JSON.stringify(list)); } catch (e) { /* storage full/unavailable — best effort */ }
+  }
+
+  /** Bounds the queue by count and age so a client that can never reach the server doesn't grow
+   * localStorage without limit (F3Go30-xyri AC). */
+  function pruneClientTelemetryQueue_(list) {
+    var cutoff = Date.now() - CLIENT_TELEMETRY_QUEUE_MAX_AGE_MS_;
+    var pruned = list.filter(function(rec) { return rec && rec.ts && Date.parse(rec.ts) >= cutoff; });
+    if (pruned.length > CLIENT_TELEMETRY_QUEUE_MAX_) pruned = pruned.slice(pruned.length - CLIENT_TELEMETRY_QUEUE_MAX_);
+    return pruned;
+  }
+
+  /** Captures one client-observed telemetry record — an error/crash (F3Go30-xyri) or a
+   * reconnect-poll attempt/outcome (F3Go30-n40u, same stream per that issue's own text) — for
+   * later upload. Never throws: a failure here must never compound whatever it's reporting on.
+   * `extra` carries kind-specific fields (errorText/stack/isTransport for an error; attempt/
+   * elapsedMs/outcome for a poll tick).
+   * @param {string} kind - 'error' | 'reconnectPoll'.
+   * @param {string} action - The callApi action this record is about (or a source tag like
+   *   'window.onerror' for a capture with no associated action).
+   * @param {Object=} extra
+   */
+  function captureClientTelemetry_(kind, action, extra) {
+    try {
+      var record = Object.assign({
+        id: makeClientTelemetryId_(),
+        ts: new Date().toISOString(),
+        kind: kind,
+        action: action || '',
+        clientVersion: STATIC_BUILD_VERSION_,
+        ns: NS_,
+        // Reuses whatever identify already resolved client-side — same fields already logged
+        // server-side for normal requests (F3Go30-xyri addendum #2), not new PII.
+        f3Name: (typeof state !== 'undefined' && state && state.f3Name) || '',
+        online: (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : null,
+        swState: (typeof navigator !== 'undefined' && navigator.serviceWorker)
+          ? (navigator.serviceWorker.controller ? 'controlled' : 'no-controller')
+          : 'unsupported'
+      }, extra || {});
+      saveClientTelemetryQueue_(pruneClientTelemetryQueue_(loadClientTelemetryQueue_().concat([record])));
+    } catch (e) { /* capture must never throw */ }
+  }
+
+  /** Captures a client-observed error/crash. The transport-failure banner path (showApiError_)
+   * and the global handlers below funnel through here. */
+  function captureClientError_(action, err, extra) {
+    captureClientTelemetry_('error', action, Object.assign({
+      errorText: (err && err.message) ? err.message : String(err),
+      stack: (err && err.stack) ? String(err.stack) : '',
+      isTransport: !!(err && err.isTransport),
+      // F3Go30-5c2a.1 AC3: carried over from callApi's thrown error when a Response existed
+      // (redirected/echoKeyHash) — absent (redirected false, echoKeyHash '') for a below-HTTP
+      // transport failure, which never gets a Response to read them off of.
+      redirected: !!(err && err.redirected),
+      echoKeyHash: (err && err.echoKeyHash) || '',
+      // F3Go30-5c2a.2 AC2/AC3: carried over from fetchAttempt_'s thrown error — absent (false /
+      // null) for an err that predates AC1 (or never went through fetchAttempt_ at all, e.g. the
+      // window.onerror/unhandledrejection handlers below), degrading safely rather than crashing.
+      abortedAtTimeout: !!(err && err.abortedAtTimeout),
+      elapsedMs: (err && typeof err.elapsedMs === 'number') ? err.elapsedMs : null
+    }, extra || {}));
+  }
+
+  var clientTelemetryFlushInFlight_ = false;
+
+  /** Uploads queued telemetry records once connectivity is available. Fire-and-forget: never
+   * blocks or degrades the PAX-facing flow that triggered the capture, and any upload failure is
+   * swallowed here rather than surfaced via showApiError_ — a failed background upload is not
+   * itself worth alarming the PAX about. Only removes a record from the queue once the server
+   * actually acknowledges the batch, so a lost response leaves it queued for next time. */
+  function flushClientTelemetryQueue_() {
+    if (clientTelemetryFlushInFlight_) return;
+    var queue = loadClientTelemetryQueue_();
+    if (!queue.length) return;
+    clientTelemetryFlushInFlight_ = true;
+    var batch = queue.slice(0, CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_);
+    callApi('clientTelemetry', { records: batch })
+      .then(function() {
+        var sentIds = batch.map(function(rec) { return rec.id; });
+        var remaining = loadClientTelemetryQueue_().filter(function(rec) { return sentIds.indexOf(rec.id) === -1; });
+        saveClientTelemetryQueue_(remaining);
+      })
+      .catch(function() { /* stays queued, retried on the next successful callApi */ })
+      .finally(function() { clientTelemetryFlushInFlight_ = false; });
+  }
+
+  window.addEventListener('error', function(e) {
+    captureClientError_('window.onerror', e.error || new Error(e.message), { source: 'window.onerror' });
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    var reason = e.reason;
+    captureClientError_('unhandledrejection', (reason instanceof Error) ? reason : new Error(String(reason)), { source: 'unhandledrejection' });
+  });
+
+  // ── F3Go30-n40u: background reconnect poll ────────────────────────────────────────────────
+  // While the transport-failure banner is showing, silently polls a cheap read (identify,
+  // already called on load) until it succeeds, hits the attempt cap, or the banner clears some
+  // other way. Never forces a reload — see apiErrorReloadBtn's wiring below for the PAX-initiated
+  // escalation once an outage runs long.
+
+  var RECONNECT_POLL_INTERVAL_MS_ = 10000;
+  var RECONNECT_POLL_MAX_ATTEMPTS_ = 30; // ~5 minutes at the base interval, then stop escalating
+  var RECONNECT_POLL_RELOAD_OFFER_AFTER_MS_ = 120000; // 2 minutes of continuous failure
+
+  var reconnectPollState_ = null; // { attempts, startedAt, timerId } while a poll is running
+
+  function stopReconnectPoll_() {
+    if (reconnectPollState_ && reconnectPollState_.timerId) clearTimeout(reconnectPollState_.timerId);
+    reconnectPollState_ = null;
+    var reloadBtn = $('apiErrorReloadBtn');
+    if (reloadBtn) reloadBtn.classList.add('hidden');
+  }
+
+  /** Re-fetches whatever read view is currently on screen once connectivity returns — the "for
+   * read actions, silently repaints with fresh data" half of F3Go30-n40u's AC. Scoped to the
+   * currently-visible view rather than "whichever action originally failed": by the time a poll
+   * succeeds the PAX may have navigated on, and repainting a hidden view would be wasted work.
+   * Write-shaped actions (identify/checkin/save/feedback) do nothing here — their own submit
+   * control is still there and working, and a write is never auto-resubmitted. */
+  function repaintCurrentView_() {
+    if (state.currentStep === 'checkin' && state.advancedOpen && state.calMonthKey) {
+      delete state.board[state.calMonthKey];
+      loadCalMonth_(state.calMonthKey);
+    } else if (state.currentStep === 'dashboard') {
+      loadDashboard_(state.viewDate ? isoDate_(state.viewDate) : undefined);
+    } else if (state.currentStep === 'bonus') {
+      loadBonusList_();
+    }
+  }
+
+  function startReconnectPoll_() {
+    if (reconnectPollState_) return; // already running
+    reconnectPollState_ = { attempts: 0, startedAt: Date.now() };
+    scheduleNextReconnectPoll_();
+  }
+
+  function scheduleNextReconnectPoll_() {
+    if (!reconnectPollState_) return;
+    reconnectPollState_.timerId = setTimeout(runReconnectPollAttempt_, RECONNECT_POLL_INTERVAL_MS_);
+  }
+
+  function runReconnectPollAttempt_() {
+    if (!reconnectPollState_) return;
+    var pollState = reconnectPollState_;
+    pollState.attempts++;
+    var elapsedMs = Date.now() - pollState.startedAt;
+
+    callApi('identify', { f3Name: state.f3Name, email: state.email }).then(function() {
+      captureClientTelemetry_('reconnectPoll', 'identify', { attempt: pollState.attempts, elapsedMs: elapsedMs, outcome: 'recovered' });
+      stopReconnectPoll_();
+      hideApiError_();
+      repaintCurrentView_();
+    }, function() {
+      captureClientTelemetry_('reconnectPoll', 'identify', { attempt: pollState.attempts, elapsedMs: elapsedMs, outcome: 'failed' });
+      if (reconnectPollState_ !== pollState) return; // stopped meanwhile (banner cleared another way)
+      if (elapsedMs >= RECONNECT_POLL_RELOAD_OFFER_AFTER_MS_) {
+        var reloadBtn = $('apiErrorReloadBtn');
+        if (reloadBtn) reloadBtn.classList.remove('hidden');
+      }
+      if (pollState.attempts >= RECONNECT_POLL_MAX_ATTEMPTS_) {
+        stopReconnectPoll_(); // give up escalating — the reload button (if offered) is what's left
+        return;
+      }
+      scheduleNextReconnectPoll_();
     });
   }
 
   function hideApiError_() {
     $('apiErrorBanner').classList.add('hidden');
+    stopReconnectPoll_();
   }
 
+  // F3Go30-5c2a.5: `btn.dataset.saving` is this function's OWN loading flag, checked instead of
+  // `btn.disabled` itself — a button's disabled attribute is not exclusively ours to read. Other
+  // renders (renderCheckinStatus_, renderSelectionPanel_) legitimately flip `.disabled` on these
+  // same buttons for unrelated reasons (an unavailable day, a newly selected date) and can land
+  // WHILE a submit is still in flight (silentResumeRefresh_'s visibilitychange handler is the
+  // most direct trigger, but a same-day coalesced tap's own settle-time re-render can race it
+  // too). Before this flag existed, isLoading's `if (!btn.disabled)` treated any such external
+  // re-enable as "not currently loading" and re-captured dataset.originalText off whatever
+  // textContent happened to be at that moment — which, mid-submit, is this function's OWN
+  // 'Saving…' placeholder. That permanently overwrote the real original label: every later
+  // isLoading:false restored 'Saving…' forever, with disabled/formatting still tracking the true
+  // state correctly (only the label was stuck) — live HAR evidence, SIT v2.5.0.20, 2026-08-26,
+  // "Missed it" (todayNoBtn/yesterdayNoBtn). Owning the flag ourselves closes that regardless of
+  // which other render raced it.
   function setButtonLoading_(btn, isLoading, loadingText) {
     if (isLoading) {
-      if (!btn.disabled) btn.dataset.originalText = btn.textContent;
+      if (btn.dataset.saving !== '1') btn.dataset.originalText = btn.textContent;
+      btn.dataset.saving = '1';
       btn.textContent = loadingText || 'Working…';
       btn.disabled = true;
     } else {
       btn.textContent = btn.dataset.originalText || btn.textContent;
+      delete btn.dataset.saving;
       btn.disabled = false;
     }
   }
@@ -1229,9 +1771,22 @@
     email: (savedIdentity && savedIdentity.email) || '',
     trackerUrl: '',
     resolvedContext: null,
-    monthCache: {},
+    // F3Go30-os03 D1: the ONE client-side per-monthKey board record, replacing the former
+    // state.monthCache (dashboard payload) AND state.calGridCache (monthGrid response) — see
+    // patchBoardDayFacts_/boardMonthGrid_ below. A record's fields are optional: a partial record
+    // (e.g. identify-only, no score/streak/myTeam/paxBoard yet) is a MISS for the fields it
+    // lacks, never a cached empty (invariant 8, docs/pax-data-model-and-contract.md §4).
+    board: {},
     pendingSelfWrites: {}, // dateIso -> value, held only while its month isn't cached yet (F3Go30-5nfj.5)
-    locallyWrittenIso: {}, // dateIso -> status string ('done'/'missed'/'pending'/'absent'), tracks writes made this pageview so a live identify response can't clobber them with stale data (F3Go30-5nfj.5)
+    // dateIso -> status string ('done'/'missed'/'pending'/'absent'), tracks writes made this
+    // pageview so a live identify response can't clobber them with stale data (F3Go30-5nfj.5).
+    // F3Go30-os03 D5: an ACKED entry stops outranking the server once a read issued after the ack
+    // lands (writeGenByIso_ below carries the generation comparison) — see reconcileWithLocalWrites_.
+    locallyWrittenIso: {},
+    // F3Go30-os03 D5: dateIso -> the requestGen_ value at the moment this date's write last acked.
+    // Compared against a read's own issuedGen in reconcileWithLocalWrites_ to tell "this response
+    // predates the write" (keep the overlay) from "this response already reflects it" (drop it).
+    writeGenByIso_: {},
     viewDate: null,
     dashboardLoading: false,
     dashboardPrefetchPromise: null,
@@ -1257,12 +1812,11 @@
     availableMonths: [],
     registeredMonthKeys: [],
     calMonthKey: null,
-    calGridCache: {},
     calLoading: false,
     // Pax-detail popup (F3Go30 "click a PAX" feature): "f3Name|YYYY-MM" -> goals/bonus-entries
     // payload, so cycling prev/next through a team with stepPaxDetail_ re-shows an already-
     // fetched teammate instantly instead of re-paying the round trip every time. Same
-    // stale-while-revalidate shape as monthCache/calGridCache above: a cache hit paints
+    // stale-while-revalidate shape as state.board above: a cache hit paints
     // immediately, then a background refetch still runs and repaints if it lands while that same
     // PAX is still the one on screen.
     paxGoalsCache: {},
@@ -1414,6 +1968,79 @@
     hideAnnouncementModal_();
   });
 
+  /** F3Go30-xyvs: SignupReminder popup — mirrors the announcement splash's mechanism above
+   * (server-driven, unconditional show/hide, F3Go30-g9bi) but its own "remind later" semantics:
+   * unlike the splash's snooze (sessionStorage, fixed delay), this one must survive an app
+   * restart/tab close and clear on the next CALENDAR DAY rather than after a fixed delay — so it
+   * uses localStorage and a wake time pinned to local midnight instead of Date.now() + delay.
+   * Keyed by monthLabel, not a content fingerprint like the splash: there's only ever one
+   * next-month target at a time, so there's no "edited content" case to distinguish. The trigger
+   * itself (res.signupReminder) is resolved server-side (resolveSignupReminder_dw_,
+   * dashboardWebapp.js) and re-evaluated on every identify/resume-refresh — this function only
+   * ever reflects what the latest LIVE response says, same isLive gate as applyAnnouncementState_
+   * (never painted from the cached instant-paint snapshot, so a stale reminder can't flash before
+   * the live identify lands). */
+  var SIGNUP_REMINDER_SNOOZE_KEY_ = 'go30SignupReminderSnoozedUntil';
+  var signupReminderShownMonthLabel_ = null;
+
+  function startOfNextLocalDay_(fromMs) {
+    var d = new Date(fromMs);
+    d.setHours(24, 0, 0, 0);
+    return d.getTime();
+  }
+  function signupReminderSnoozed_(monthLabel) {
+    try {
+      var stored = localStorage.getItem(SIGNUP_REMINDER_SNOOZE_KEY_);
+      if (!stored) return false;
+      var sep = stored.indexOf('|');
+      var wakeAt = Number(sep === -1 ? stored : stored.slice(0, sep));
+      var snoozedMonthLabel = sep === -1 ? null : stored.slice(sep + 1);
+      return !!wakeAt && Date.now() < wakeAt && snoozedMonthLabel === monthLabel;
+    } catch (e) { return false; }
+  }
+  function hideSignupReminderModal_() {
+    signupReminderShownMonthLabel_ = null;
+    $('signupReminderModal').classList.add('hidden');
+  }
+  function showSignupReminderModal_(reminder) {
+    signupReminderShownMonthLabel_ = reminder.monthLabel;
+    $('signupReminderMonthLabel').textContent = reminder.monthLabel;
+    $('signupReminderMonthLabel2').textContent = reminder.monthLabel;
+    $('signupReminderModal').classList.remove('hidden');
+  }
+  /** Called alongside applyServerConfig_ on every LIVE identify/resume-refresh response — shows
+   * or hides UNCONDITIONALLY so signing up for next month through ANY path (this popup, direct
+   * nav, admin action) clears it on the PAX's very next response, not just client-side dismissal.
+   * @param {boolean=} isLive Defaults true — see this function's docstring above. */
+  function applySignupReminderState_(reminder, isLive) {
+    if (isLive === false) return;
+    if (reminder && !signupReminderSnoozed_(reminder.monthLabel)) {
+      // Never collide with an active announcement splash — the two are mutually exclusive
+      // server-driven overlays, so let the (necessarily higher-priority, admin-authored)
+      // announcement win if both are up at once rather than stacking two modals.
+      if (!$('announcementModal').classList.contains('hidden')) return;
+      showSignupReminderModal_(reminder);
+    } else {
+      hideSignupReminderModal_();
+    }
+  }
+  $('signupReminderLaterBtn').addEventListener('click', function() {
+    if (signupReminderShownMonthLabel_ != null) {
+      try {
+        localStorage.setItem(SIGNUP_REMINDER_SNOOZE_KEY_, startOfNextLocalDay_(Date.now()) + '|' + signupReminderShownMonthLabel_);
+      } catch (e) { /* not fatal */ }
+    }
+    hideSignupReminderModal_();
+  });
+  $('signupReminderSignUpBtn').addEventListener('click', function() {
+    hideSignupReminderModal_();
+    // Already authenticated (state.f3Name/email are set — this popup only ever shows on a
+    // matched identify) and prefilled from the PAX's current-month PaxDB record, same as every
+    // other openSignup_('next') call site (F3Go30-ez8v's nmcYesBtn/openNextMonthChoice_ path) —
+    // no second prefill mechanism.
+    openSignup_('next');
+  });
+
   /** True when this document is a BUILT client running a different version than the server
    * reports. A null clientBuild means unbuilt src/ served directly (local dev + Playwright) —
    * there is no build to be behind, so that is never staleness. */
@@ -1493,6 +2120,10 @@
     // nothing. Bail before touching the DOM.
     if (pageIsUnloading_) return;
 
+    // F3Go30-xyri: every banner-worthy failure is a client-observed error worth capturing for
+    // frequency/root-cause analysis, uploaded opportunistically once connectivity returns.
+    captureClientError_(action, err);
+
     var detail =
       'Time: ' + new Date().toISOString() + '\n' +
       'Action: ' + action + '\n' +
@@ -1518,7 +2149,16 @@
     }
 
     $('apiErrorBanner').classList.remove('hidden');
+
+    // F3Go30-n40u: only a transport failure warrants a reconnect poll — a server that answered
+    // (any status, any json.ok:false) has already made its decision, and polling identify won't
+    // change that.
+    if (isTransport) startReconnectPoll_();
   }
+
+  $('apiErrorReloadBtn').addEventListener('click', function() {
+    location.reload();
+  });
 
   function updateHeaderIdentity_(f3Name, team, monthLabel) {
     var title = (NAME_SPACE || '') + (f3Name ? ': ' + f3Name : '');
@@ -1590,10 +2230,30 @@
 
   /** F3Go30-5nfj.5: any date the PAX wrote locally this pageview (state.locallyWrittenIso) wins
    * over a live identify response that may predate it — mutates res in place before it's handed
-   * to applyIdentifySuccess_. */
-  function reconcileWithLocalWrites_(res) {
+   * to applyIdentifySuccess_.
+   *
+   * F3Go30-os03 D5/Addendum 2-3 (Finding A): the overlay used to win FOREVER — set before the
+   * write's round trip, deleted only on failure, never cleared on success — so once a write acked
+   * it outranked every later server response for the rest of the pageview, including one from a
+   * SECOND device that had since moved the truth on (cross-device split-brain that never self-
+   * healed). Since F3Go30-xg8f made the check-in write re-read the row before acking, any read
+   * ISSUED AFTER that ack necessarily already contains it, so the overlay's job ends there.
+   * `issuedGen` is this read's position in the requestGen_ sequence (captured by the caller
+   * immediately before firing the identify request); writeGenByIso_[dateIso] is the sequence
+   * position at the moment that date's write acked. An entry whose write acked at or after this
+   * read was issued is still ahead of (or concurrent with) it — the response predates the write,
+   * so the overlay is kept. An entry whose write acked BEFORE this read was issued is already
+   * reflected in the response — the overlay is dropped instead of clobbering fresher server truth.
+   * Do not "just clear on ack" instead of this comparison — that reintroduces the original
+   * F3Go30-5nfj.5 race (a stale in-flight read landing AFTER the ack and clobbering the write). */
+  function reconcileWithLocalWrites_(res, issuedGen) {
     var local = state.locallyWrittenIso;
     if (!local || !Object.keys(local).length) return;
+    Object.keys(local).forEach(function(dateIso) {
+      var writeGen = state.writeGenByIso_[dateIso];
+      if (writeGen !== undefined && writeGen < issuedGen) delete local[dateIso];
+    });
+    if (!Object.keys(local).length) return;
     (res.monthGrid || []).forEach(function(entry) {
       if (Object.prototype.hasOwnProperty.call(local, entry.dateIso)) entry.status = local[entry.dateIso];
     });
@@ -1661,8 +2321,16 @@
     saveIdentityToStorage_(res.f3Name, res.email);
     saveTokenToStorage_(res.identityToken);
     if (!opts.preserveView) {
-      state.monthCache = {};
+      // F3Go30-os03 D6: reset the whole board plus every piece of this-pageview write-tracking
+      // state together — leaving pendingSelfWrites/locallyWrittenIso/writeGenByIso_ behind on a
+      // re-identify was a latent bug (found while designing D6): a DIFFERENT PAX typing their name
+      // in the same pageview would otherwise inherit the previous PAX's writes through
+      // reconcileWithLocalWrites_/applyOwnDayWrite_.
+      state.board = {};
       state.viewDate = null;
+      state.pendingSelfWrites = {};
+      state.locallyWrittenIso = {};
+      state.writeGenByIso_ = {};
     }
     updateHeaderIdentity_(res.f3Name, res.team, res.monthLabel);
     $('checkinHeading').textContent = (res.firstUse ? 'Welcome, ' : 'Welcome back, ') + res.f3Name + '!';
@@ -1672,26 +2340,33 @@
     $('yesterdayBlock').classList.toggle('hidden', !res.yesterdayAvailable);
     if (res.yesterdayAvailable) renderCheckinStatus_('yesterday', res.yesterdayStatus);
 
-    state.monthGrid = res.monthGrid || [];
+    // F3Go30-os03 D1/D3: identify's own monthGrid is this PAX's day facts for ITS OWN month —
+    // always merge them into that month's board slot (never gated on preserveView: this is fresh
+    // authoritative data regardless of which month the calendar happens to be parked on), then
+    // derive state.monthGrid for whatever month IS actually parked (state.calMonthKey) from the
+    // board — never a direct assignment from res.monthGrid, which is what made state.monthGrid a
+    // mutable alias into a cache entry (the P1 bug this issue fixes).
+    var identifyMonthGrid = res.monthGrid || [];
+    var todayD = new Date();
+    var identifyMonthKey = (identifyMonthGrid[0] && identifyMonthGrid[0].dateIso.slice(0, 7)) || monthKeyOf_(todayD);
+    patchBoardDayFacts_(identifyMonthKey, identifyMonthGrid);
     state.todayStatus = res.todayStatus;
     state.yesterdayStatus = res.yesterdayStatus;
     state.yesterdayAvailable = !!res.yesterdayAvailable;
-    var todayD = new Date();
     state.todayIso = isoDate_(todayD);
     var yesterdayD = new Date(todayD);
     yesterdayD.setDate(yesterdayD.getDate() - 1);
     state.yesterdayIso = isoDate_(yesterdayD);
     // Month-to-month navigation (F3Go30-k5fn.2): always take the freshest available/registered
-    // lists from the server, but only reset which month the calendar is parked on (and its cache)
-    // on a genuine fresh identify — not on a preserveView reconciliation, which must not yank a
-    // PAX back to their anchored month if they had already paged elsewhere.
+    // lists from the server, but only reset which month the calendar is parked on on a genuine
+    // fresh identify — not on a preserveView reconciliation, which must not yank a PAX back to
+    // their anchored month if they had already paged elsewhere.
     state.availableMonths = res.availableMonths || [];
     state.registeredMonthKeys = res.registeredMonthKeys || [];
     if (!opts.preserveView || !state.calMonthKey) {
-      state.calMonthKey = (state.monthGrid[0] && state.monthGrid[0].dateIso.slice(0, 7)) || monthKeyOf_(todayD);
-      state.calGridCache = {};
-      state.calGridCache[state.calMonthKey] = { monthKey: state.calMonthKey, monthGrid: state.monthGrid, registered: true };
+      state.calMonthKey = identifyMonthKey;
     }
+    state.monthGrid = boardMonthGrid_(state.calMonthKey);
     if (!opts.preserveView) {
       state.selectedDateIso = null;
       state.lastEditedDayIso = null;
@@ -1724,6 +2399,7 @@
    * result into a fresh page. */
   function applyTypedIdentifyResult_(result) {
     if (result.config) applyServerConfig_(result.config);
+    applySignupReminderState_(result.signupReminder);
     if (result.matched) {
       applyIdentifySuccess_(result);
     } else if (result.knownPaxNotRegistered) {
@@ -1806,11 +2482,13 @@
       $('step-identify').classList.add('hidden');
       $('step-tokenLoading').classList.remove('hidden');
     }
+    var tokenIdentifyIssuedGen_ = ++requestGen_; // F3Go30-os03 D5 — this read's position in the sequence
     callApi('identify', { token: SAVED_IDENTITY_TOKEN })
       .then(function(res) {
         if (res.config) applyServerConfig_(res.config);
+        applySignupReminderState_(res.signupReminder);
         if (res.matched) {
-          reconcileWithLocalWrites_(res);
+          reconcileWithLocalWrites_(res, tokenIdentifyIssuedGen_);
           applyIdentifySuccess_(res, { preserveView: paintedFromSnapshot_ });
           saveCheckinSnapshot_(SAVED_IDENTITY_TOKEN, res);
         } else if (res.knownPaxNotRegistered) {
@@ -1871,8 +2549,20 @@
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  function valueToCheckinStatus_(value) {
-    return value === 1 ? 'done' : value === 0 ? 'missed' : 'pending';
+  /** F3Go30-os03 D2: the ONE value->status converter, total over the numeric dayValues
+   * vocabulary (1/0/null/-1) state.board stores day facts in — collapses the former
+   * valueToCheckinStatus_ (today/yesterday) and valueToMonthGridStatus_ (calendar), which had
+   * silently drifted: they disagreed on -1 ('pending' vs 'absent'), masked only because
+   * submitCheckin_ never passes -1. -1 never reaches the today/yesterday check-in UI for the same
+   * reason, so using the richer (calendar) mapping everywhere is safe there too. */
+  function valueToStatus_(value) {
+    return value === 1 ? 'done' : value === 0 ? 'missed' : value === -1 ? 'absent' : 'pending';
+  }
+
+  /** Inverse of valueToStatus_ — needed only where identify/monthGrid responses (string
+   * vocabulary) are ingested into state.board (numeric vocabulary, D2). See patchBoardDayFacts_. */
+  function statusToValue_(status) {
+    return status === 'done' ? 1 : status === 'missed' ? 0 : status === 'absent' ? -1 : null;
   }
 
   /** Shared WHO/WHAT/HOW row markup for goals.who/what/how — blank lines dropped. Returns ''
@@ -1978,18 +2668,27 @@
    * teammate view (renderPaxDetailBonusEntries_) so the two never drift out of shape. */
   function bonusEntryInnerHtml_(entry, editable) {
     var dateLabel = entry.whenIso ? formatNavDate_(parseIsoDate_(entry.whenIso)) : '';
-    var isExtra = !!entry.complete && entry.counts === false;
+    // F3Go30-6faz.1: a duplicated Slack Link is silently dropped by the sheet's own dedup the
+    // same way a weekly-cap repeat is — treat both as the same "extra" badge/note rather than
+    // teaching the list a second visual state, only varying the note's wording by cause.
+    var isCapExtra = !!entry.complete && entry.counts === false;
+    var isDuplicateLinkExtra = !!entry.complete && !isCapExtra && entry.duplicateLink === true;
+    var isExtra = isCapExtra || isDuplicateLinkExtra;
     var badgeClass = !entry.complete ? 'pending' : (isExtra ? 'extra' : 'complete');
     var badgeText = !entry.complete ? 'Needs link' : (isExtra ? 'Logged (extra)' : '✓ Counted');
+    var extraNote = isCapExtra
+      ? 'Great job getting out there! Only one ' + escapeHtml_(entry.type) +
+        ' counts per week, so this one won’t add extra points — keep up the good work.'
+      : (isDuplicateLinkExtra
+        ? 'This Slack Link was already used for a ' + escapeHtml_(entry.type) +
+          ' entry this week, so this one won’t add extra points.'
+        : '');
     return '<div class="bonus-entry-top">' +
         '<span class="bonus-entry-type">' + escapeHtml_(entry.type) + '</span>' +
         '<span class="bonus-entry-date">' + escapeHtml_(dateLabel) + '</span>' +
       '</div>' +
       '<div class="bonus-entry-message">' + escapeHtml_(entry.message) + '</div>' +
-      (isExtra
-        ? '<div class="bonus-entry-note">Great job getting out there! Only one ' + escapeHtml_(entry.type) +
-          ' counts per week, so this one won’t add extra points — keep up the good work.</div>'
-        : '') +
+      (isExtra ? '<div class="bonus-entry-note">' + extraNote + '</div>' : '') +
       '<div class="bonus-entry-bottom">' +
         '<span class="bonus-badge ' + badgeClass + '">' + badgeText + '</span>' +
         (editable ? '<button class="bonus-edit-btn" data-row="' + entry.rowIndex + '">Edit</button>' : '') +
@@ -2043,25 +2742,40 @@
     yesBtn.classList.toggle('current', status === 'done');
     noBtn.classList.toggle('current', status === 'missed');
     noneBtn.classList.toggle('current', status === 'pending');
+    // F3Go30-5c2a.5: skip a button that's mid-submit (dataset.saving, set by setButtonLoading_) —
+    // this render can land while a checkin for this same day is still in flight (silentResumeRefresh_
+    // fires on visibilitychange with no regard for an open submit; a same-day coalesced tap's own
+    // settle-time call here is the other route), and forcing `.disabled` off from under it let the
+    // PAX re-tap mid-flight, which is what corrupted setButtonLoading_'s captured original label in
+    // the first place (see that function's docstring). The in-flight request's own settle handler
+    // owns this button's disabled/text state and will restore it correctly.
     var disabled = status === 'unavailable';
-    yesBtn.disabled = disabled;
-    noBtn.disabled = disabled;
-    noneBtn.disabled = disabled;
+    [yesBtn, noBtn, noneBtn].forEach(function(btn) {
+      if (btn.dataset.saving === '1') return;
+      btn.disabled = disabled;
+    });
   }
 
   function submitCheckin_(btn, day, value) {
     hideApiError_();
     setButtonLoading_(btn, true, 'Saving…');
     var dateIso = day === 'today' ? state.todayIso : state.yesterdayIso;
-    var status = valueToCheckinStatus_(value);
+    var status = valueToStatus_(value);
     applyOwnDayWrite_(dateIso, value);
     state.locallyWrittenIso[dateIso] = status;
     callApi('checkin', { f3Name: state.f3Name, email: state.email, day: day, value: value, resolvedContext: state.resolvedContext })
       .then(function() {
+        state.writeGenByIso_[dateIso] = requestGen_; // F3Go30-os03 D5 — this write's ack position
         renderCheckinStatus_(day, status);
         state.lastEditedDayIso = dateIso;
         if (day === 'today') state.todayStatus = status; else state.yesterdayStatus = status;
-        updateMonthGridEntry_(dateIso, status);
+        // F3Go30-os03 D3/D4: state.board was already patched (applyOwnDayWrite_, above, before the
+        // round trip) regardless of which month the calendar is parked on — this just refreshes
+        // the CURRENTLY PAINTED grid from it (a fresh derive, never a mutated alias; see
+        // boardMonthGrid_). Replaces the former updateMonthGridEntry_, which mutated state.monthGrid
+        // directly and silently no-opped whenever the calendar was parked on a different month
+        // than dateIso's (the P1 cross-month split-brain this issue fixes).
+        state.monthGrid = boardMonthGrid_(state.calMonthKey);
         if (state.advancedOpen) {
           updateCalCellStatus_(dateIso, status);
           if (state.selectedDateIso === dateIso) renderSelectionPanel_(dateIso);
@@ -2094,21 +2808,37 @@
     absent: 'Marked Failed',
   };
 
-  function valueToMonthGridStatus_(value) {
-    return value === 1 ? 'done' : value === 0 ? 'missed' : value === -1 ? 'absent' : 'pending';
-  }
-
   function monthGridEntryFor_(dateIso) {
     return (state.monthGrid || []).filter(function(e) { return e.dateIso === dateIso; })[0] || null;
   }
 
-  function updateMonthGridEntry_(dateIso, status) {
-    var entry = monthGridEntryFor_(dateIso);
-    if (entry) entry.status = status;
+  function invalidateMonthCacheFor_(dateIso) {
+    delete state.board[monthKeyOf_(parseIsoDate_(dateIso))];
   }
 
-  function invalidateMonthCacheFor_(dateIso) {
-    delete state.monthCache[monthKeyOf_(parseIsoDate_(dateIso))];
+  /** F3Go30-os03 D1/D3: merges a {dateIso, status}[] response (identify's or the monthGrid RPC's
+   * shape) into state.board[monthKey]'s day-facts fields, creating the record if absent. Only
+   * touches dayDates/dayValues — never clobbers dashboard-only fields (score, streak, myTeam,
+   * paxBoard, ...) a prior dashboard fetch may already have populated for this monthKey
+   * (invariant 8, docs/pax-data-model-and-contract.md §4: a field the store doesn't have yet is a
+   * miss, not a cached empty). */
+  function patchBoardDayFacts_(monthKey, entries) {
+    var rec = state.board[monthKey] || (state.board[monthKey] = { monthKey: monthKey });
+    rec.dayDates = entries.map(function(e) { return e.dateIso; });
+    rec.dayValues = entries.map(function(e) { return statusToValue_(e.status); });
+  }
+
+  /** F3Go30-os03 D3: the one accessor that derives a calendar's display grid for a monthKey from
+   * state.board — always a fresh array of fresh objects (never a reference into the stored
+   * record), so nothing downstream can corrupt the board by mutating what this returns. Returns
+   * [] on a miss (no day facts known yet for this monthKey), matching the pre-consolidation
+   * empty-grid signal renderCalSignupPrompt_/renderCalendar_ already handle. */
+  function boardMonthGrid_(monthKey) {
+    var rec = state.board[monthKey];
+    if (!rec || !rec.dayDates || !rec.dayValues) return [];
+    return rec.dayDates.map(function(dateIso, i) {
+      return { dateIso: dateIso, status: valueToStatus_(rec.dayValues[i]) };
+    });
   }
 
   /** F3Go30-5nfj.5: patches a just-written (or about-to-be-written) value straight into every
@@ -2138,7 +2868,7 @@
    * dashboard reflects it even if the PAX navigates there before the write finishes. */
   function applyOwnDayWrite_(dateIso, value) {
     var monthKey = monthKeyOf_(parseIsoDate_(dateIso));
-    var cached = state.monthCache[monthKey];
+    var cached = state.board[monthKey];
     if (cached) {
       patchOwnDayIntoPayload_(cached, dateIso, value);
     } else {
@@ -2234,8 +2964,13 @@
     $('calNextMonthBtn').disabled = state.calLoading || !canGoForward;
   }
 
-  function applyCalGridPayload_(res) {
-    state.monthGrid = res.monthGrid || [];
+  /** F3Go30-os03 D3: takes an explicit monthKey (never trusts whatever happens to already be
+   * parked) and derives its display grid from state.board via boardMonthGrid_ — this and
+   * loadCalMonth_'s cache-hit check below are the two places that used to read/assign
+   * state.calGridCache/res.monthGrid directly, which is what made state.monthGrid a mutable alias
+   * into a cache entry (P1). */
+  function applyCalGridPayload_(monthKey) {
+    state.monthGrid = boardMonthGrid_(monthKey);
     $('calSignupPrompt').classList.add('hidden');
     $('calEditableArea').classList.remove('hidden');
     renderCalendar_();
@@ -2258,9 +2993,12 @@
 
   /** Single seam for putting any month (identify's own, or a paged-to one) on screen: consults
    * state.registeredMonthKeys for the signup-gate decision (AC5), then either serves
-   * state.calGridCache or fetches via the monthGrid action (F3Go30-k5fn.1) — never a second
-   * calendar renderer (AC9): both the registered and just-loaded paths funnel into
-   * applyCalGridPayload_, which calls the same renderCalendar_ the initial month uses. */
+   * state.board or fetches via the monthGrid action (F3Go30-k5fn.1) — never a second calendar
+   * renderer (AC9): both the registered and just-loaded paths funnel into applyCalGridPayload_,
+   * which calls the same renderCalendar_ the initial month uses.
+   * F3Go30-os03 A11: a month's day facts already sitting in state.board — e.g. fetched earlier by
+   * dashboard navigation, which shares this same store — serve straight from the accessor with no
+   * monthGrid RPC at all; state.board unifies what used to be two separate per-month caches. */
   function loadCalMonth_(monthKey) {
     state.calMonthKey = monthKey;
     if ((state.registeredMonthKeys || []).indexOf(monthKey) === -1) {
@@ -2268,9 +3006,9 @@
       renderCalMonthNav_();
       return Promise.resolve();
     }
-    var cached = state.calGridCache[monthKey];
-    if (cached) {
-      applyCalGridPayload_(cached);
+    var cached = state.board[monthKey];
+    if (cached && cached.dayDates && cached.dayValues) {
+      applyCalGridPayload_(monthKey);
       renderCalMonthNav_();
       return Promise.resolve();
     }
@@ -2279,9 +3017,12 @@
     renderCalMonthNav_();
     return callApi('monthGrid', { f3Name: state.f3Name, email: state.email, monthKey: monthKey, resolvedContext: state.resolvedContext })
       .then(function(res) {
-        state.calGridCache[monthKey] = res;
-        if (res.registered) applyCalGridPayload_(res);
-        else renderCalSignupPrompt_(monthKey);
+        if (res.registered) {
+          patchBoardDayFacts_(monthKey, res.monthGrid || []);
+          applyCalGridPayload_(monthKey);
+        } else {
+          renderCalSignupPrompt_(monthKey);
+        }
       })
       .catch(function(err) { showApiError_('monthGrid', err); })
       .finally(function() {
@@ -2343,8 +3084,12 @@
 
   function renderSelectionPanel_(dateIso) {
     state.selectedDateIso = dateIso;
+    // F3Go30-5c2a.5: only clears a STALE disabled button left over from a PRIOR selected date's
+    // submit — dataset.saving (set by setButtonLoading_) tells the two apart from a submit for
+    // THIS date that is still genuinely in flight, which must be left alone for its own settle
+    // handler to resolve (same race as renderCheckinStatus_, see setButtonLoading_'s docstring).
     [$('selYesBtn'), $('selNoBtn'), $('selNoneBtn')].forEach(function(btn) {
-      if (btn.disabled) setButtonLoading_(btn, false);
+      if (btn.disabled && btn.dataset.saving !== '1') setButtonLoading_(btn, false);
     });
     var entry = monthGridEntryFor_(dateIso);
     var status = entry ? entry.status
@@ -2360,7 +3105,9 @@
     $('selNoneBtn').classList.toggle('current', status === 'pending');
     $('selFailBtn').classList.toggle('current', status === 'absent');
     var isPast = dateIso < state.todayIso;
-    $('selFailBtn').disabled = !isPast;
+    // Same dataset.saving guard as above: don't override availability onto a button that's
+    // mid-submit for this date.
+    if ($('selFailBtn').dataset.saving !== '1') $('selFailBtn').disabled = !isPast;
     $('selFailBtn').title = isPast ? '' : 'Failed can only be set for a past day';
   }
 
@@ -2368,12 +3115,15 @@
     hideApiError_();
     setButtonLoading_(btn, true, 'Saving…');
     var dateIso = state.selectedDateIso;
-    var status = valueToMonthGridStatus_(value);
+    var status = valueToStatus_(value);
     applyOwnDayWrite_(dateIso, value);
     state.locallyWrittenIso[dateIso] = status;
     callApi('checkin', { f3Name: state.f3Name, email: state.email, day: dateIso, value: value, resolvedContext: state.resolvedContext })
       .then(function() {
-        updateMonthGridEntry_(dateIso, status);
+        state.writeGenByIso_[dateIso] = requestGen_; // F3Go30-os03 D5 — this write's ack position
+        // F3Go30-os03 D3/D4: refresh the currently-painted grid from state.board (see submitCheckin_'s
+        // matching comment) — dateIso === state.selectedDateIso, always within the parked month here.
+        state.monthGrid = boardMonthGrid_(state.calMonthKey);
         updateCalCellStatus_(dateIso, status);
         renderSelectionPanel_(dateIso);
         state.lastEditedDayIso = dateIso;
@@ -2426,7 +3176,7 @@
   $('dashboardBtn').addEventListener('click', function() {
     var btn = this;
     var todayIso = isoDate_(new Date());
-    var cached = state.monthCache[monthKeyOf_(new Date())];
+    var cached = state.board[monthKeyOf_(new Date())];
     if (cached && cached.dayDates.indexOf(todayIso) !== -1) {
       renderDashboard_(cached, cached.dayDates.indexOf(todayIso));
       revalidateDashboard_();
@@ -2435,7 +3185,7 @@
     setButtonLoading_(btn, true, 'Loading…');
     var pending = state.dashboardPrefetchPromise
       ? state.dashboardPrefetchPromise.then(function() {
-          var c = state.monthCache[monthKeyOf_(new Date())];
+          var c = state.board[monthKeyOf_(new Date())];
           if (c && c.dayDates.indexOf(todayIso) !== -1) {
             renderDashboard_(c, c.dayDates.indexOf(todayIso));
             return;
@@ -2601,6 +3351,7 @@
   }
 
   function fillSignupInfoStep_() {
+    $('suInfoError').classList.add('hidden');
     $('suInfoHeading').textContent = signupState.wasMatched ? 'Review your registration' : "Welcome! Let's get your info";
     $('suMatchedCallout').classList.toggle('hidden', !signupState.wasMatched);
     $('suInfoF3Name').textContent = state.f3Name;
@@ -2616,6 +3367,139 @@
     $('suNagInput').checked = signupState.nag;
     renderSignupTeamTypeUI_();
   }
+
+  /**
+   * F3Go30-9u68: team and WHO/WHAT/HOW goals are required before a signup can proceed past the
+   * info step — a PAX who abandons here (the "McLovin" case named in the issue) previously had
+   * no signal anything was missing. Returns a human-readable reason (which also explains WHY, per
+   * the issue's AC) or null when the step is complete. Checked against signupState, not the DOM,
+   * since every field already keeps signupState in sync via its own input listener above.
+   * @returns {string|null}
+   */
+  function validateSignupInfoStep_() {
+    var teamOk = !!(signupState.teamType && String(signupState.team || '').trim());
+    if (!teamOk) {
+      return 'Please choose a team before continuing — team is how F3 accountability and peer ' +
+        'support happen on Go30; without one, nobody’s watching for you to fall behind.';
+    }
+    var goalsOk = String(signupState.who || '').trim() && String(signupState.what || '').trim() &&
+      String(signupState.how || '').trim();
+    if (!goalsOk) {
+      return 'Please fill in WHO, WHAT, and HOW before continuing — naming a real goal is the ' +
+        'core Go30 mechanism for lasting change, not just a formality.';
+    }
+    return null;
+  }
+
+  function showTeamInfoModal_() { $('teamInfoModal').classList.remove('hidden'); }
+  function hideTeamInfoModal_() { $('teamInfoModal').classList.add('hidden'); }
+
+  // ── Settings/tools menu (F3Go30-1pqo.1) ─────────────────────────────────
+  // Menu trigger is #headerIdentityBtn, wrapping #headerName in the persistent header (see its
+  // markup comment). Only entries this stage delivers (F3Go30-1pqo.4/.5/.7/.9 + que4) — Theme/
+  // Notifications/Logout land in Stage 9 once kgzo.5/833s.7 exist (PLAN-08-19.md handoff).
+  function showSettingsMenu_() {
+    // Identity-dependent entries (self-scoped bonus editing, feedback attribution) have nothing
+    // to act on before identify() has ever resolved — How It Works/FAQ don't need identity, so
+    // the trigger itself stays enabled on every step rather than hidden pre-identify.
+    var hasIdentity = !!state.f3Name;
+    $('settingsBonusBtn').disabled = !hasIdentity;
+    $('settingsFeedbackBtn').disabled = !hasIdentity;
+    $('settingsLogoutBtn').disabled = !hasIdentity;
+    $('settingsModal').classList.remove('hidden');
+  }
+  function hideSettingsMenu_() { $('settingsModal').classList.add('hidden'); }
+  $('headerIdentityBtn').addEventListener('click', showSettingsMenu_);
+  $('settingsCloseBtn').addEventListener('click', hideSettingsMenu_);
+
+  // F3Go30-1pqo.7 + F3Go30-que4: the menu (present on every step via the persistent header) is
+  // the single mechanism satisfying que4's "How it Works reachable from every page view" AC —
+  // opens the same standalone page (static-pages/src/how-it-works.html, tools/sync-how-it-
+  // works.js) the signup intro card already links to, rather than a second content copy.
+  $('settingsHowBtn').addEventListener('click', function() {
+    hideSettingsMenu_();
+    window.open('how-it-works.html', '_blank', 'noopener');
+  });
+
+  // F3Go30-1pqo.5
+  $('settingsFaqBtn').addEventListener('click', function() {
+    hideSettingsMenu_();
+    $('faqModal').classList.remove('hidden');
+  });
+  $('faqCloseBtn').addEventListener('click', function() { $('faqModal').classList.add('hidden'); });
+
+  // F3Go30-1pqo.9: reuses openBonusManage_ (defined below, under Step: bonus) — the same
+  // function the header's existing trophy-icon shortcut (#bonusBtn) and the dashboard's Bonus
+  // tile (#dBonusTile) already call. This is a third entry point into the same flow, not a new
+  // one.
+  $('settingsBonusBtn').addEventListener('click', function() {
+    if ($('settingsBonusBtn').disabled) return;
+    hideSettingsMenu_();
+    openBonusManage_();
+  });
+
+  // F3Go30-1pqo.4
+  function resetSiteFeedbackForm_() {
+    siteFeedbackState_.rating = 0;
+    $('siteFeedbackComment').value = '';
+    $('siteFeedbackError').classList.add('hidden');
+    $('siteFeedbackNotSent').classList.remove('hidden');
+    $('siteFeedbackSentNote').classList.add('hidden');
+    renderSiteFeedbackStars_();
+  }
+  $('settingsFeedbackBtn').addEventListener('click', function() {
+    if ($('settingsFeedbackBtn').disabled) return;
+    hideSettingsMenu_();
+    resetSiteFeedbackForm_();
+    $('siteFeedbackModal').classList.remove('hidden');
+  });
+  $('siteFeedbackCancelBtn').addEventListener('click', function() { $('siteFeedbackModal').classList.add('hidden'); });
+  $('siteFeedbackDoneBtn').addEventListener('click', function() { $('siteFeedbackModal').classList.add('hidden'); });
+
+  // F3Go30-1pqo.10: client-only Logout — forgets the durable check-in token + snapshot (so this
+  // device stops silently resuming straight into check-in) but deliberately leaves
+  // go30SignupIdentity alone, unlike notYouLink's full clear, so the identify form still
+  // pre-fills name/email on the next visit. Reuses notYouLink's already-computed href
+  // (webapp/ns/contextDate, no id/token) rather than recomputing the same URL a second time —
+  // that navigation is what lands back on the identify form pre-filled (its fields are painted
+  // from `state`, itself loaded from the now-untouched go30SignupIdentity, on the next load).
+  // Full server-side token invalidation (PaxCache/spreadsheet) stays F3Go30-1pqo.2's scope.
+  $('settingsLogoutBtn').addEventListener('click', function() {
+    if ($('settingsLogoutBtn').disabled) return;
+    clearCheckinSnapshot_();
+    location.href = $('notYouLink').href;
+  });
+  // F3Go30-5c2a.3: a client-minted idempotency key, stable across a hand-retried resubmission of
+  // the exact same (unedited) report — the failure mode that produced three emails for one
+  // report during F3Go30-5c2a: the server's send actually succeeded each time, but the client
+  // reported false transport failures, so the PAX resubmitted by hand. Content-derived (not a
+  // random per-attempt id like makeClientTelemetryId_) so a retry of the same report reuses the
+  // same key, while editing the text before resubmitting produces a new one. Reuses hashString_
+  // (already used for TOKEN_STORAGE_KEY_'s namespacing) rather than a bespoke hash.
+  function siteFeedbackKey_(f3Name, email, rating, comment) {
+    return hashString_((f3Name || '') + '|' + (email || '') + '|' + (rating || 0) + '|' + (comment || ''));
+  }
+
+  $('siteFeedbackSendBtn').addEventListener('click', function() {
+    var comment = $('siteFeedbackComment').value.trim();
+    var rating = siteFeedbackState_.rating;
+    if (!rating && !comment) {
+      $('siteFeedbackError').textContent = 'Add a rating or a comment before sending.';
+      $('siteFeedbackError').classList.remove('hidden');
+      return;
+    }
+    $('siteFeedbackError').classList.add('hidden');
+    hideApiError_();
+    setButtonLoading_($('siteFeedbackSendBtn'), true, 'Sending…');
+    var feedbackKey = siteFeedbackKey_(state.f3Name, state.email, rating, comment);
+    callApi('siteFeedback', { f3Name: state.f3Name, email: state.email, rating: rating, comment: comment, feedbackKey: feedbackKey })
+      .then(function() {
+        $('siteFeedbackNotSent').classList.add('hidden');
+        $('siteFeedbackSentNote').classList.remove('hidden');
+      })
+      .catch(function(err) { showApiError_('siteFeedback', err); })
+      .finally(function() { setButtonLoading_($('siteFeedbackSendBtn'), false); });
+  });
 
   function renderSignupMonthChoices_() {
     var months = signupState.months || {};
@@ -2638,17 +3522,33 @@
     });
   }
 
-  function renderSignupFeedbackStars_() {
+  // Shared 1-5 star-rating widget, used by both the signup flow's own feedback card
+  // (#suFeedbackStars) and the settings-menu "Send Feedback" modal (#siteFeedbackStars,
+  // F3Go30-1pqo.4) — same interaction, two independent rating values, one implementation.
+  function renderStarRating_(containerId, getRating, onSelect) {
+    var rating = getRating();
     var html = '';
     for (var n = 1; n <= 5; n++) {
-      html += '<button type="button" data-n="' + n + '">' + (n <= signupState.feedbackRating ? '★' : '☆') + '</button>';
+      html += '<button type="button" data-n="' + n + '">' + (n <= rating ? '★' : '☆') + '</button>';
     }
-    $('suFeedbackStars').innerHTML = html;
-    Array.prototype.forEach.call($('suFeedbackStars').querySelectorAll('button'), function(btn) {
-      btn.addEventListener('click', function() {
-        signupState.feedbackRating = parseInt(btn.getAttribute('data-n'), 10);
-        renderSignupFeedbackStars_();
-      });
+    $(containerId).innerHTML = html;
+    Array.prototype.forEach.call($(containerId).querySelectorAll('button'), function(btn) {
+      btn.addEventListener('click', function() { onSelect(parseInt(btn.getAttribute('data-n'), 10)); });
+    });
+  }
+
+  function renderSignupFeedbackStars_() {
+    renderStarRating_('suFeedbackStars', function() { return signupState.feedbackRating; }, function(n) {
+      signupState.feedbackRating = n;
+      renderSignupFeedbackStars_();
+    });
+  }
+
+  var siteFeedbackState_ = { rating: 0 };
+  function renderSiteFeedbackStars_() {
+    renderStarRating_('siteFeedbackStars', function() { return siteFeedbackState_.rating; }, function(n) {
+      siteFeedbackState_.rating = n;
+      renderSiteFeedbackStars_();
     });
   }
 
@@ -2698,7 +3598,7 @@
         var gatedMonthKey = calSignupGateMonthKey_;
         calSignupGateMonthKey_ = null;
         if ((state.registeredMonthKeys || []).indexOf(gatedMonthKey) === -1) state.registeredMonthKeys.push(gatedMonthKey);
-        delete state.calGridCache[gatedMonthKey];
+        delete state.board[gatedMonthKey];
         if (state.calMonthKey === gatedMonthKey) loadCalMonth_(gatedMonthKey);
       }
     }).catch(function(err) {
@@ -2739,7 +3639,17 @@
   $('suPhoneInput').addEventListener('input', function() { signupState.phone = this.value; });
   $('suNagInput').addEventListener('change', function() { signupState.nag = this.checked; });
 
+  $('suTeamInfoBtn').addEventListener('click', showTeamInfoModal_);
+  $('teamInfoCloseBtn').addEventListener('click', hideTeamInfoModal_);
+
   $('suInfoNextBtn').addEventListener('click', function() {
+    var validationError = validateSignupInfoStep_();
+    if (validationError) {
+      $('suInfoError').textContent = validationError;
+      $('suInfoError').classList.remove('hidden');
+      return;
+    }
+    $('suInfoError').classList.add('hidden');
     if (!signupState.months || !signupState.months.next) {
       signupState.targetMonth = 'current';
       performSignupSave_($('suInfoNextBtn'));
@@ -3428,7 +4338,7 @@
             delete state.pendingSelfWrites[dateIso];
           }
         });
-        state.monthCache[payload.monthKey] = payload;
+        state.board[payload.monthKey] = payload;
         if (!silent) renderDashboard_(payload, payload.viewDayIndex);
         return payload;
       })
@@ -3464,7 +4374,7 @@
       // transport banner is stale and can be cleared. If revalidate fails, catch below
       // keeps the banner up so cached rendering never masks an ongoing outage.
       hideApiError_();
-      var fresh = state.monthCache[monthKeyOf_(new Date())];
+      var fresh = state.board[monthKeyOf_(new Date())];
       if (fresh && fresh.dayDates.indexOf(todayIso) !== -1 &&
           state.viewDate && isoDate_(state.viewDate) === todayIso) {
         renderDashboard_(fresh, fresh.dayDates.indexOf(todayIso));
@@ -3480,7 +4390,7 @@
     var todayClient = new Date();
     if (newDate > todayClient && isoDate_(newDate) !== isoDate_(todayClient)) return;
 
-    var cached = state.monthCache[monthKeyOf_(newDate)];
+    var cached = state.board[monthKeyOf_(newDate)];
     if (cached) {
       var idx = cached.dayDates.indexOf(isoDate_(newDate));
       if (idx === -1) { loadDashboard_(isoDate_(newDate)); return; }
@@ -3614,6 +4524,12 @@
     if (saved && saved.complete && saved.counts === false) {
       showBonusSaveNotice_('Recorded — but it won’t add points: only one ' + saved.type +
         ' counts per week, and you already have one credited for this week.');
+    } else if (saved && saved.complete && saved.duplicateLink === true) {
+      // F3Go30-6faz.1: same signal as the weekly-cap notice above, for the case that notice
+      // doesn't cover — an uncapped type (e.g. EHing FNG) whose reused Slack Link is silently
+      // collapsed by the sheet's own UNIQUE(A:F) dedup instead of a weekly-cap rule.
+      showBonusSaveNotice_('Recorded — but it won’t add points: this Slack Link was already used for a ' +
+        saved.type + ' entry this week.');
     } else {
       hideBonusSaveNotice_();
     }
@@ -3710,7 +4626,7 @@
     setButtonLoading_(btn, true, 'Saving…');
     callApi(action, payload)
       .then(function(res) {
-        // Bonus totals are baked into the cached per-month dashboard payload (see monthCache
+        // Bonus totals are baked into the cached per-month dashboard payload (see state.board
         // above); a save here would otherwise leave the dashboard showing pre-edit bonus totals
         // until the user navigates months, mirroring the checkin invalidation pattern.
         invalidateMonthCacheFor_(payload.whenIso);
@@ -3752,13 +4668,15 @@
     var now = Date.now();
     if (now - lastResumeRefreshAt_ < RESUME_REFRESH_THROTTLE_MS_) return;
     lastResumeRefreshAt_ = now;
+    var resumeIssuedGen_ = ++requestGen_; // F3Go30-os03 D5 — this read's position in the sequence
     callApi('identify', { token: SAVED_IDENTITY_TOKEN })
       .then(function(res) {
         // Token went stale (revoked) while parked, or a plain miss — leave the current display
         // untouched; the PAX's next real action (a check-in submit) will surface the failure.
         if (!res.matched) return;
         if (res.config) applyServerConfig_(res.config);
-        reconcileWithLocalWrites_(res);
+        applySignupReminderState_(res.signupReminder);
+        reconcileWithLocalWrites_(res, resumeIssuedGen_);
         applyIdentifySuccess_(res, { preserveView: true });
         saveCheckinSnapshot_(SAVED_IDENTITY_TOKEN, res);
         prefetchDashboard_();
