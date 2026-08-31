@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-VlOQIqRMXwKgI6e7zhxOUp4cabwtNhAGzPSBH04ePIc=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-B6UkO8Vd/C5icppHsLYL8N1bEOO4x4LRRtn2OhftUPs='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-CTSzD+wvETP8jl3RhZCLoU2pwV3MMIPxcjxdm/0vCTM=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-B6UkO8Vd/C5icppHsLYL8N1bEOO4x4LRRtn2OhftUPs='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -281,6 +281,11 @@
     border: 1px solid var(--border); background: var(--input-bg); color: var(--text); border-radius: 10px; }
   .sc-tab.on { background: var(--brand-bg); color: var(--brand-contrast); border-color: var(--brand-bg); }
   .sc-metric-row { display: flex; gap: 6px; margin-bottom: 14px; }
+  /* F3Go30-enwp follow-up: same .hidden-loses-to-a-later-same-specificity-rule trap already fixed
+     for .announce-overlay above — .sc-metric-row/.sc-podium's own display:flex/grid are declared
+     after plain .hidden in this stylesheet, so toggling the hidden class alone did nothing for
+     the future-month roster view. Two-class selectors outrank both regardless of order. */
+  .sc-metric-row.hidden, .sc-podium.hidden { display: none; }
   .sc-metric-btn { flex: 1; padding: 8px; font: inherit; font-size: 13px; cursor: pointer;
     border: 1px solid var(--border); background: var(--input-bg); color: var(--text); border-radius: 8px; }
   .sc-metric-btn.on { background: var(--soft-bg); color: var(--brand); border-color: var(--soft-border); font-weight: bold; }
@@ -1178,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.6";
+  var STATIC_BUILD_VERSION_ = "2.6.0.7";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
