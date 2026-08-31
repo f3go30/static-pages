@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-CTSzD+wvETP8jl3RhZCLoU2pwV3MMIPxcjxdm/0vCTM=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-B6UkO8Vd/C5icppHsLYL8N1bEOO4x4LRRtn2OhftUPs='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-G0F1/8wLnQ6NK2RPo7iW8Fl1giVCmEPg2SgiXObok/8=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-x/5iiun7iF/r0JaBpv1pXEsMjW1OvpmCWB4DKSDvasQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1183,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.7";
+  var STATIC_BUILD_VERSION_ = "2.6.0.8";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4652,23 +4652,60 @@
     $('scNextMonthBtn').disabled = scorecardState_.loading || idx === -1 || idx >= bounds.maxIdx;
   }
 
+  /** A state.board[monthKey] entry only counts as usable here once it carries paxBoard —
+   * patchBoardDayFacts_ (the check-in calendar's own month nav, monthGrid action) can plant a
+   * state.board record with only day-facts fields and no paxBoard at all, which a plain
+   * `state.board[monthKey]` truthiness check used to mistake for "already loaded" and render as
+   * a permanently empty board (caught live: Scorecard opened before prefetchDashboard_'s
+   * background dashboard fetch — the one that actually carries paxBoard — had landed, and
+   * nothing was ever wired to re-render Scorecard once it did land in the background). */
+  function scorecardBoardCached_(monthKey) {
+    var b = state.board[monthKey];
+    return (b && Array.isArray(b.paxBoard)) ? b : null;
+  }
+
+  function scorecardLoadingUi_(on) {
+    scorecardState_.loading = on;
+    $('scMetrics').classList.toggle('hidden', on);
+    $('scPodium').classList.toggle('hidden', on);
+    if (on) {
+      $('scLadder').innerHTML = '<p class="muted">Loading…</p>';
+      $('scTeams').innerHTML = '';
+    }
+    renderScorecardMonthNav_();
+  }
+
+  /** Resolves with the full dashboard payload for monthKey — from cache if already fully loaded,
+   * otherwise by fetching it. For the real current month specifically, chains onto
+   * prefetchDashboard_'s in-flight promise when there is one (the common "just identified,
+   * immediately opened Scorecard" case) rather than firing a redundant second request for the
+   * same day; every other month just fetches fresh, same as before. */
+  function loadScorecardMonthData_(monthKey) {
+    var cached = scorecardBoardCached_(monthKey);
+    if (cached) return Promise.resolve(cached);
+    var isRealCurrentMonth = monthKey === monthKeyOf_(new Date());
+    if (isRealCurrentMonth && state.dashboardPrefetchPromise) {
+      return state.dashboardPrefetchPromise.then(function() {
+        return scorecardBoardCached_(monthKey) || state.board[monthKey];
+      });
+    }
+    var months = state.availableMonths || [];
+    var target = months.filter(function(m) { return m.monthKey === monthKey; })[0];
+    return loadDashboard_(target ? target.startDateIso : undefined, { silent: true });
+  }
+
   function loadScorecardMonth_(monthKey) {
     scorecardState_.monthKey = monthKey;
-    var cached = state.board[monthKey];
+    var cached = scorecardBoardCached_(monthKey);
     if (cached) {
       renderScorecard_(cached);
       return Promise.resolve();
     }
-    scorecardState_.loading = true;
-    renderScorecardMonthNav_();
-    var months = state.availableMonths || [];
-    var target = months.filter(function(m) { return m.monthKey === monthKey; })[0];
-    return loadDashboard_(target ? target.startDateIso : undefined, { silent: true })
+    scorecardLoadingUi_(true);
+    return loadScorecardMonthData_(monthKey)
       .then(function(payload) { if (payload) renderScorecard_(payload); })
-      .finally(function() {
-        scorecardState_.loading = false;
-        renderScorecardMonthNav_();
-      });
+      .catch(function(err) { showApiError_('dashboard', err); })
+      .finally(function() { scorecardLoadingUi_(false); });
   }
 
   function navigateScorecardMonth_(delta) {
@@ -4684,26 +4721,27 @@
   $('scPrevMonthBtn').addEventListener('click', function() { navigateScorecardMonth_(-1); });
   $('scNextMonthBtn').addEventListener('click', function() { navigateScorecardMonth_(1); });
 
-  /** Opens Scorecard from the current dashboard payload if it's already cached (state.board —
-   * the common case, since Scorecard is only reachable once the dashboard has loaded), otherwise
-   * fetches it silently first — same 'dashboard' cmd loadDashboard_ already uses, no new
-   * endpoint. Always opens on the real current month, regardless of what day/month check-in nav
-   * happens to be parked on. */
+  /** Opens Scorecard from the current dashboard payload if it's already fully cached
+   * (state.board — the common case, since Scorecard is only reachable once the dashboard has
+   * loaded), otherwise shows the screen right away with a loading state and fills it in once
+   * loadScorecardMonthData_ resolves (chaining onto the background prefetch already in flight
+   * rather than blocking navigation on a fresh fetch). Always opens on the real current month,
+   * regardless of what day/month check-in nav happens to be parked on. */
   function openScorecard_() {
-    var refDate = new Date();
-    var cached = state.board[monthKeyOf_(refDate)];
+    var monthKey = monthKeyOf_(new Date());
+    scorecardState_.monthKey = monthKey;
+    setScorecardView_('ladder');
+    showStep('scorecard');
+    var cached = scorecardBoardCached_(monthKey);
     if (cached) {
-      setScorecardView_('ladder');
       renderScorecard_(cached);
-      showStep('scorecard');
       return;
     }
-    loadDashboard_(isoDate_(refDate), { silent: true }).then(function(payload) {
-      if (!payload) return;
-      setScorecardView_('ladder');
-      renderScorecard_(payload);
-      showStep('scorecard');
-    });
+    scorecardLoadingUi_(true);
+    loadScorecardMonthData_(monthKey)
+      .then(function(payload) { if (payload) renderScorecard_(payload); })
+      .catch(function(err) { showApiError_('dashboard', err); })
+      .finally(function() { scorecardLoadingUi_(false); });
   }
 
   function loadDashboard_(dateISO, opts) {
