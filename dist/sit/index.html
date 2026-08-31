@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-4evuPCfMjTm5OdSwl5o78RhJeNn9fNX0NoDJgPlrx3Y=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-fu3EvNW7wfw+Y/fuMuJdNw3f6M2ZpkNhMOZro6LUmF8='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-2WAEC59G5RxAovHwDZv1Mr8I9dtZP2PsRmekFCaAk/U=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-ZTcVQnbROuKu6KRS9zPXlEV/FlucbfXTE9TaRCgrDgI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1005,6 +1005,17 @@
          normalized/average score), built from the dashboard payload already cached in
          state.board (paxBoard is every PAX grouped by team) — no separate fetch. -->
     <div id="step-scorecard" class="hidden">
+      <!-- F3Go30-enwp follow-up: month nav pinned above the tabs — shared by both Ladder and Top
+           Teams views (one month context for the whole screen), same date-nav-btn/card-head-row
+           pattern as the check-in calendar's calPrevMonthBtn/calNextMonthBtn. Bounded to at most
+           SCORECARD_MAX_MONTHS_BACK_ months behind the real current month; never forward past it
+           (a future month has no scores yet). -->
+      <div class="card-head-row">
+        <button id="scPrevMonthBtn" class="date-nav-btn" title="Previous month"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2 id="scMonthNavLabel" style="margin:0;flex:1;text-align:center;">&nbsp;</h2>
+        <button id="scNextMonthBtn" class="date-nav-btn" title="Next month"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+
       <div class="sc-tabs">
         <button type="button" class="sc-tab" id="scTabLadder">The Grind Board</button>
         <button type="button" class="sc-tab" id="scTabTeams">Top Teams</button>
@@ -1013,7 +1024,7 @@
       <div id="scLadderView">
         <div class="card">
           <h2 style="margin-top:0;">The Grind Board</h2>
-          <p class="muted" style="margin-top:-6px;">Every PAX ranked for <span id="scMonthLabel"></span>.</p>
+          <p class="muted" style="margin-top:-6px;">Every PAX ranked, month to date.</p>
           <div class="sc-metric-row" id="scMetrics"></div>
           <div class="sc-podium" id="scPodium"></div>
           <div class="sc-ladder" id="scLadder"></div>
@@ -1162,7 +1173,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.3";
+  var STATIC_BUILD_VERSION_ = "2.6.0.4";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4417,7 +4428,8 @@
     { key: 'rawScore', label: 'Reps Completed' },
     { key: 'bonusTotal', label: 'Bonus points' }
   ];
-  var scorecardState_ = { view: 'ladder', metric: 'score', data: null };
+  var scorecardState_ = { view: 'ladder', metric: 'score', data: null, monthKey: null, loading: false };
+  var SCORECARD_MAX_MONTHS_BACK_ = 2;
 
   function bonusTotalOf_(bonusByType) {
     var sum = 0;
@@ -4546,21 +4558,75 @@
 
   function renderScorecard_(d) {
     scorecardState_.data = d;
-    $('scMonthLabel').textContent = d.monthLabel || 'this month';
+    scorecardState_.monthKey = d.monthKey || scorecardState_.monthKey;
     renderScorecardMetrics_();
     renderLadder_(d);
     renderTopTeams_(d);
+    renderScorecardMonthNav_();
   }
 
   $('scTabLadder').addEventListener('click', function() { setScorecardView_('ladder'); });
   $('scTabTeams').addEventListener('click', function() { setScorecardView_('teams'); });
 
+  /** Month nav pinned above both Scorecard tabs (F3Go30-enwp follow-up) — lets a PAX look back at
+   * how a recent month shook out, capped at SCORECARD_MAX_MONTHS_BACK_ months behind the real
+   * current month (not state.viewDate, which can be dragged around by check-in day nav) and never
+   * forward past it, since a future month has no scores yet. Reuses state.board/loadDashboard_ —
+   * same cache and fetch path the dashboard and Scorecard's initial open already use, so paging
+   * back costs a fetch only the first time a given month is viewed. */
+  function scorecardMonthBounds_() {
+    var todayIdx = calMonthIndex_(monthKeyOf_(new Date()));
+    if (todayIdx === -1) return { minIdx: -1, maxIdx: -1 };
+    return { minIdx: Math.max(0, todayIdx - SCORECARD_MAX_MONTHS_BACK_), maxIdx: todayIdx };
+  }
+
+  function renderScorecardMonthNav_() {
+    var idx = calMonthIndex_(scorecardState_.monthKey);
+    var bounds = scorecardMonthBounds_();
+    $('scMonthNavLabel').textContent = scorecardState_.loading ? 'Loading…' : calMonthLabel_(scorecardState_.monthKey);
+    $('scPrevMonthBtn').disabled = scorecardState_.loading || idx === -1 || idx <= bounds.minIdx;
+    $('scNextMonthBtn').disabled = scorecardState_.loading || idx === -1 || idx >= bounds.maxIdx;
+  }
+
+  function loadScorecardMonth_(monthKey) {
+    scorecardState_.monthKey = monthKey;
+    var cached = state.board[monthKey];
+    if (cached) {
+      renderScorecard_(cached);
+      return Promise.resolve();
+    }
+    scorecardState_.loading = true;
+    renderScorecardMonthNav_();
+    var months = state.availableMonths || [];
+    var target = months.filter(function(m) { return m.monthKey === monthKey; })[0];
+    return loadDashboard_(target ? target.startDateIso : undefined, { silent: true })
+      .then(function(payload) { if (payload) renderScorecard_(payload); })
+      .finally(function() {
+        scorecardState_.loading = false;
+        renderScorecardMonthNav_();
+      });
+  }
+
+  function navigateScorecardMonth_(delta) {
+    if (scorecardState_.loading) return;
+    var months = state.availableMonths || [];
+    var idx = calMonthIndex_(scorecardState_.monthKey);
+    var newIdx = idx + delta;
+    var bounds = scorecardMonthBounds_();
+    if (idx === -1 || newIdx < bounds.minIdx || newIdx > bounds.maxIdx) return;
+    loadScorecardMonth_(months[newIdx].monthKey);
+  }
+
+  $('scPrevMonthBtn').addEventListener('click', function() { navigateScorecardMonth_(-1); });
+  $('scNextMonthBtn').addEventListener('click', function() { navigateScorecardMonth_(1); });
+
   /** Opens Scorecard from the current dashboard payload if it's already cached (state.board —
    * the common case, since Scorecard is only reachable once the dashboard has loaded), otherwise
    * fetches it silently first — same 'dashboard' cmd loadDashboard_ already uses, no new
-   * endpoint. */
+   * endpoint. Always opens on the real current month, regardless of what day/month check-in nav
+   * happens to be parked on. */
   function openScorecard_() {
-    var refDate = state.viewDate || new Date();
+    var refDate = new Date();
     var cached = state.board[monthKeyOf_(refDate)];
     if (cached) {
       setScorecardView_('ladder');
