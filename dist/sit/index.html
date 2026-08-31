@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-IecpCy8OeHCkxxhOj3+//5KARWZKe85oo2ifkS89Vs0=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-CBXeJ+aIPRf+3mh2g/xIioP452bEdPK5LhdgTqrJxRA='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-VlOQIqRMXwKgI6e7zhxOUp4cabwtNhAGzPSBH04ePIc=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-B6UkO8Vd/C5icppHsLYL8N1bEOO4x4LRRtn2OhftUPs='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -251,6 +251,11 @@
   .board-row-main .bname { width: 117px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-weight: bold; }
   .board-row-main .bstatus { width: 20px; flex-shrink: 0; text-align: center; }
   .board-row-main .bpct { width: 30px; flex-shrink: 0; text-align: right; font-family: monospace; font-weight: bold; }
+  /* Scorecard's future-month roster (F3Go30-enwp follow-up): same .board-row-main a day-scoped
+     board-row uses, but with no status/pct columns to balance against — let the name run free
+     instead of sitting pinned to a 117px column meant to line up with those. */
+  .board-row-main.roster { justify-content: flex-start; }
+  .board-row-main.roster .bname { width: auto; }
   /* F3Go30 pax-detail: taps (not just hover) reveal the badge's meaning — `title` alone is a
      no-op on touch, and the badge sits inside a clickable tile/row so a tap has to be caught and
      stopped here before it reaches that ancestor's own click handler (see the delegated
@@ -1023,8 +1028,8 @@
 
       <div id="scLadderView">
         <div class="card">
-          <h2 style="margin-top:0;">The Grind Board</h2>
-          <p class="muted" style="margin-top:-6px;">Every PAX ranked, month to date.</p>
+          <h2 style="margin-top:0;" id="scLadderTitle">The Grind Board</h2>
+          <p class="muted" style="margin-top:-6px;" id="scLadderSubtitle">Every PAX ranked, month to date.</p>
           <div class="sc-metric-row" id="scMetrics"></div>
           <div class="sc-podium" id="scPodium"></div>
           <div class="sc-ladder" id="scLadder"></div>
@@ -1173,7 +1178,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.5";
+  var STATIC_BUILD_VERSION_ = "2.6.0.6";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4551,6 +4556,42 @@
     });
   }
 
+  /** A month with no check-ins yet has no meaningful ranking (F3Go30-enwp follow-up) — that's
+   * when renderScorecard_ swaps the ladder/podium for renderScorecardRoster_ instead. */
+  function scorecardMonthIsFuture_(monthKey) {
+    return !!monthKey && monthKey > monthKeyOf_(new Date());
+  }
+
+  /** Plain "who's on what team" list for a future month — same .board-group/.board-row markup
+   * and look as the Dashboard's own #dPaxBoard (renderDashboard_), reused for visual consistency,
+   * but built fresh here rather than calling into that function: its row-building is wired to
+   * day-of-month specifics (dayIndex/todayIndex/yesterdayIndex, daySegments mini-bars, check-in
+   * status badges, bonus chips) that don't exist for a month nobody has checked into yet — a
+   * future-dated PAX board is just a name list grouped by team, nothing else. Not clickable into
+   * pax-detail for the same reason: there's no day-scoped detail to show there yet. */
+  function renderScorecardRoster_(d) {
+    var box = $('scLadder');
+    box.innerHTML = '';
+    (d.paxBoard || []).forEach(function(group) {
+      var groupEl = document.createElement('div');
+      groupEl.className = 'board-group';
+      var head = document.createElement('div');
+      head.className = 'board-head';
+      head.innerHTML = '<span>' + escapeHtml_(group.name) + '</span><span>' + group.members.length + ' PAX</span>';
+      groupEl.appendChild(head);
+      var rowsEl = document.createElement('div');
+      rowsEl.className = 'board-rows';
+      (group.members || []).forEach(function(m) {
+        var row = document.createElement('div');
+        row.className = 'board-row' + (m.name === d.f3Name ? ' me' : '');
+        row.innerHTML = '<div class="board-row-main roster"><span class="bname">' + escapeHtml_(m.name) + '</span></div>';
+        rowsEl.appendChild(row);
+      });
+      groupEl.appendChild(rowsEl);
+      box.appendChild(groupEl);
+    });
+  }
+
   function setScorecardView_(view) {
     scorecardState_.view = view;
     $('scTabLadder').classList.toggle('on', view === 'ladder');
@@ -4562,8 +4603,19 @@
   function renderScorecard_(d) {
     scorecardState_.data = d;
     scorecardState_.monthKey = d.monthKey || scorecardState_.monthKey;
-    renderScorecardMetrics_();
-    renderLadder_(d);
+    var isFuture = scorecardMonthIsFuture_(d.monthKey);
+    $('scLadderTitle').textContent = isFuture ? 'Team Roster' : 'The Grind Board';
+    $('scLadderSubtitle').textContent = isFuture
+      ? "Who's signed up so far, by team — nothing scored yet."
+      : 'Every PAX ranked, month to date.';
+    $('scMetrics').classList.toggle('hidden', isFuture);
+    $('scPodium').classList.toggle('hidden', isFuture);
+    if (isFuture) {
+      renderScorecardRoster_(d);
+    } else {
+      renderScorecardMetrics_();
+      renderLadder_(d);
+    }
     renderTopTeams_(d);
     renderScorecardMonthNav_();
   }
