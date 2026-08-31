@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-2WAEC59G5RxAovHwDZv1Mr8I9dtZP2PsRmekFCaAk/U=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-ZTcVQnbROuKu6KRS9zPXlEV/FlucbfXTE9TaRCgrDgI='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-IecpCy8OeHCkxxhOj3+//5KARWZKe85oo2ifkS89Vs0=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-CBXeJ+aIPRf+3mh2g/xIioP452bEdPK5LhdgTqrJxRA='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1173,7 +1173,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.4";
+  var STATIC_BUILD_VERSION_ = "2.6.0.5";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4430,6 +4430,9 @@
   ];
   var scorecardState_ = { view: 'ladder', metric: 'score', data: null, monthKey: null, loading: false };
   var SCORECARD_MAX_MONTHS_BACK_ = 2;
+  // One month forward lets a PAX check team rosters for a just-opened next month before anyone
+  // has scored anything — Top Teams still lists every signed-up PAX per team even at all-zero.
+  var SCORECARD_MAX_MONTHS_FORWARD_ = 1;
 
   function bonusTotalOf_(bonusByType) {
     var sum = 0;
@@ -4575,9 +4578,13 @@
    * same cache and fetch path the dashboard and Scorecard's initial open already use, so paging
    * back costs a fetch only the first time a given month is viewed. */
   function scorecardMonthBounds_() {
+    var months = state.availableMonths || [];
     var todayIdx = calMonthIndex_(monthKeyOf_(new Date()));
     if (todayIdx === -1) return { minIdx: -1, maxIdx: -1 };
-    return { minIdx: Math.max(0, todayIdx - SCORECARD_MAX_MONTHS_BACK_), maxIdx: todayIdx };
+    return {
+      minIdx: Math.max(0, todayIdx - SCORECARD_MAX_MONTHS_BACK_),
+      maxIdx: Math.min(months.length - 1, todayIdx + SCORECARD_MAX_MONTHS_FORWARD_)
+    };
   }
 
   function renderScorecardMonthNav_() {
