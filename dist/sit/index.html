@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-rFcpmQVtdJmDMcl8LxiwkBWmjpgRBQGvl0LMGd6lI9A=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-ofwOTlPOMZA4aG+cMdsdYmJakfa99sypbIznjxe3sxk='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-fAzP67KALcpqv7kMCnopRIQt10fLs4mFw5c0qqi6ReU=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-7JjLmQxLnhB/PoofdPA6yCOiee9BZZSbLEXyR+q5qqY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1183,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.11";
+  var STATIC_BUILD_VERSION_ = "2.6.0.12";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4841,8 +4841,13 @@
       // keeps the banner up so cached rendering never masks an ongoing outage.
       hideApiError_();
       var fresh = state.board[monthKeyOf_(new Date())];
+      // F3Go30-e4r0: by the time this background fetch resolves the PAX may have navigated to
+      // another step entirely (Scorecard, Bonus, ...) — repainting here would call
+      // renderDashboard_'s unconditional showStep('dashboard') and silently yank them back.
+      // Same guard repaintCurrentView_ already uses for the reconnect-poll's silent repaint.
       if (fresh && fresh.dayDates.indexOf(todayIso) !== -1 &&
-          state.viewDate && isoDate_(state.viewDate) === todayIso) {
+          state.viewDate && isoDate_(state.viewDate) === todayIso &&
+          state.currentStep === 'dashboard') {
         renderDashboard_(fresh, fresh.dayDates.indexOf(todayIso));
       }
     }).catch(function() { /* swallowed — the already-rendered cached copy stays on screen */ });
