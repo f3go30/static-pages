@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-V2bH3C5DzT3WbNxItOE0Qf6aygm5x0gAA67/xyey5iA=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-x/5iiun7iF/r0JaBpv1pXEsMjW1OvpmCWB4DKSDvasQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-X8oegA52VSPM0ZwqVr1h5wHQsKIYKOlIKPAL/lrGpfQ=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-/bmNih6+X19cJ4NcKk2ck/2geYNjkxiX5M3G8K46YDY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1183,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.9";
+  var STATIC_BUILD_VERSION_ = "2.6.0.10";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4561,10 +4561,29 @@
     });
   }
 
-  /** A month with no check-ins yet has no meaningful ranking (F3Go30-enwp follow-up) — that's
-   * when renderScorecard_ swaps the ladder/podium for renderScorecardRoster_ instead. */
-  function scorecardMonthIsFuture_(monthKey) {
-    return !!monthKey && monthKey > monthKeyOf_(new Date());
+  /** True once at least one PAX on the board has a nonzero score, rawScore, or bonus point —
+   * i.e. there's something real to rank. Early on day 1 of a freshly-started month nobody has
+   * checked in yet, so every row reads 0 across the board; ranking 0-vs-0 is meaningless even
+   * though the viewer IS registered (F3Go30-csfe.2 AC2). */
+  function scorecardBoardHasAnyScore_(paxBoard) {
+    return (paxBoard || []).some(function(group) {
+      return (group.members || []).some(function(m) {
+        return (m.score || 0) > 0 || (m.rawScore || 0) > 0 || bonusTotalOf_(m.bonusByType) > 0;
+      });
+    });
+  }
+
+  /** A month with nothing meaningful to rank has no "you" panel or ranking to show (F3Go30-enwp
+   * follow-up, F3Go30-csfe.2) — that's when renderScorecard_ swaps the ladder/podium for
+   * renderScorecardRoster_ instead. Two independent triggers, both server-grounded rather than
+   * calendar-guessed: the viewer isn't registered in this month (`registered`,
+   * handleCheckinDashboard_, F3Go30-csfe.1), or the board simply has no scores yet (a real,
+   * registered month on day 1 before anyone has checked in). An earlier version compared
+   * d.monthKey against the client's own clock instead, which broke every month boundary the
+   * instant "next month" became "today" and silently rendered a ranked podium for a month
+   * nobody had real scores in. Neither check here depends on what date the client thinks it is. */
+  function scorecardIsRosterOnly_(d) {
+    return d.registered === false || !scorecardBoardHasAnyScore_(d.paxBoard);
   }
 
   /** Plain "who's on what team" list for a future month — same .board-group/.board-row markup
@@ -4608,14 +4627,14 @@
   function renderScorecard_(d) {
     scorecardState_.data = d;
     scorecardState_.monthKey = d.monthKey || scorecardState_.monthKey;
-    var isFuture = scorecardMonthIsFuture_(d.monthKey);
-    $('scLadderTitle').textContent = isFuture ? 'Team Roster' : 'The Grind Board';
-    $('scLadderSubtitle').textContent = isFuture
+    var rosterOnly = scorecardIsRosterOnly_(d);
+    $('scLadderTitle').textContent = rosterOnly ? 'Team Roster' : 'The Grind Board';
+    $('scLadderSubtitle').textContent = rosterOnly
       ? "Who's signed up so far, by team — nothing scored yet."
       : 'Every PAX ranked, month to date.';
-    $('scMetrics').classList.toggle('hidden', isFuture);
-    $('scPodium').classList.toggle('hidden', isFuture);
-    if (isFuture) {
+    $('scMetrics').classList.toggle('hidden', rosterOnly);
+    $('scPodium').classList.toggle('hidden', rosterOnly);
+    if (rosterOnly) {
       renderScorecardRoster_(d);
     } else {
       renderScorecardMetrics_();
