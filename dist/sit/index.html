@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-QrIaIX3zdV6JetvxdeRgf1eLU4OoVjBI8c3Txdzfx1g=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-RMkqJaUIjTPFz4t74oCbIzqQpLEc7H+E3X8r8JAqosw='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-oWtrPMNSHzaK6fa2Eh7M4HXmv9RjkUCW1K2nyhkxYxg=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-nl/8m46tYqdhFz3T4XlSIPN7XPoLBBn0PH/w9PT8nnA='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1183,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.13";
+  var STATIC_BUILD_VERSION_ = "2.6.0.14";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1889,7 +1889,7 @@
     viewDate: null,
     dashboardLoading: false,
     dashboardPrefetchPromise: null,
-    bonusReturnStep: 'checkin',
+    mainViewReturnStep: 'checkin',
     bonusEntries: [],
     bonusEditingRowIndex: null,
     bonusEditingOriginalWhenIso: null,
@@ -2172,19 +2172,24 @@
   applyVersionState_(STATIC_BUILD_VERSION_, null);
 
   // Steps whose Back now lives in the persistent header (headerBackBtn) instead of a per-card
-  // button, keyed to their fixed destination step. 'bonus' isn't listed here — its Back target
-  // is dynamic (state.bonusReturnStep, set below); headerBackBtn's click handler special-cases it.
-  var HEADER_BACK_TARGET_ = { dashboard: 'checkin', paxDetail: 'dashboard', scorecard: 'dashboard' };
+  // button, keyed to their fixed destination step. 'bonus' and 'scorecard' aren't listed here —
+  // both are reachable from either 'checkin' or 'dashboard' (the header menu that opens
+  // Scorecard, and the bonusBtn that opens Bonus, are both available from every main step), so
+  // their Back target is dynamic (state.mainViewReturnStep, set below) rather than fixed;
+  // headerBackBtn's click handler special-cases both. F3Go30-izly: Scorecard used to hardcode
+  // 'dashboard' here, so opening it straight from Checkin (never having visited Dashboard this
+  // session) sent Back to an empty, never-rendered Dashboard skeleton.
+  var HEADER_BACK_TARGET_ = { dashboard: 'checkin', paxDetail: 'dashboard' };
 
   function showStep(name) {
     ['identify', 'checkin', 'dashboard', 'bonus', 'signup', 'nextMonthChoice', 'paxDetail', 'scorecard'].forEach(function(s) {
       $('step-' + s).classList.toggle('hidden', s !== name);
     });
     state.currentStep = name;
-    $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name] && name !== 'bonus');
+    $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name] && name !== 'bonus' && name !== 'scorecard');
     $('moreBtn').classList.toggle('hidden', name !== 'dashboard');
     $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice' || name === 'paxDetail' || name === 'scorecard');
-    if (name === 'checkin' || name === 'dashboard') state.bonusReturnStep = name;
+    if (name === 'checkin' || name === 'dashboard') state.mainViewReturnStep = name;
   }
 
   /** F3Go30-ez8v: a known PAX who's registered for NEXT month but not the current one — offer the
@@ -4478,6 +4483,17 @@
     });
   }
 
+  /** Ranks two PAX for the ladder/podium by the active metric, breaking a tie on that metric by
+   * longest streak (Stuart, 2026-09-01) before falling back to alphabetical name for a full tie
+   * (metric AND streak both equal). Never overrides an outright higher metric value — streak
+   * only decides genuine ties. Its own function so the tiebreak rule is unit-testable without
+   * the DOM-heavy podium/row building the rest of renderLadder_ does. */
+  function scorecardPaxComparator_(metric) {
+    return function(a, b) {
+      return (b[metric] || 0) - (a[metric] || 0) || (b.streak || 0) - (a.streak || 0) || a.name.localeCompare(b.name);
+    };
+  }
+
   function renderLadder_(d) {
     var teamColors = scorecardTeamColorMap_(d.paxBoard);
     var pax = [];
@@ -4487,7 +4503,7 @@
       });
     });
     var metric = scorecardState_.metric;
-    pax.sort(function(a, b) { return (b[metric] || 0) - (a[metric] || 0) || a.name.localeCompare(b.name); });
+    pax.sort(scorecardPaxComparator_(metric));
 
     var podiumEl = $('scPodium');
     podiumEl.innerHTML = '';
@@ -5066,7 +5082,7 @@
   $('paxDetailPrevBtn').addEventListener('click', function() { stepPaxDetail_(-1); });
   $('paxDetailNextBtn').addEventListener('click', function() { stepPaxDetail_(1); });
   $('headerBackBtn').addEventListener('click', function() {
-    if (state.currentStep === 'bonus') { showStep(state.bonusReturnStep); return; }
+    if (state.currentStep === 'bonus' || state.currentStep === 'scorecard') { showStep(state.mainViewReturnStep); return; }
     var target = HEADER_BACK_TARGET_[state.currentStep];
     if (target) showStep(target);
   });
