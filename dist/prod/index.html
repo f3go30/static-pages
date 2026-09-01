@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-4cZ55wvyCmvKDZ1tPPV5BkUc7L98Y25aMMil4VEfY54=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-Njqm9yIRPJivh66+MuygNZTqfOeENdZaoO64b4rlEpg='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-sMmJSWJbqNw6cR7UL6X0uNdiucpUlgRg6tyDrHK2DZE=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-nl/8m46tYqdhFz3T4XlSIPN7XPoLBBn0PH/w9PT8nnA='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -66,6 +66,14 @@
 
     --score-divider: #ede9df;
     --tooltip-bg: #2b2b2b; --tooltip-fg: #f8f4ea;
+
+    /* F3Go30-enwp: Scorecard's HIM Ladder/Top Teams is the app's first per-team-identity display
+       (everything else colors by score, not by team) — validated 6-slot categorical palette
+       copied verbatim from docs/scorecards/assets/tokens.css, which checked colorblind-separation
+       and contrast against this exact card surface in both themes. Re-copy from there, don't
+       hand-tune here, if either palette changes. */
+    --team-1: #2a78d6; --team-2: #eb6834; --team-3: #1baf7a;
+    --team-4: #eda100; --team-5: #e87ba4; --team-6: #008300;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -112,6 +120,9 @@
 
       --score-divider: #33403a;
       --tooltip-bg: #ece7dc; --tooltip-fg: #20241f;
+
+      --team-1: #3987e5; --team-2: #d95926; --team-3: #199e70;
+      --team-4: #c98500; --team-5: #d55181; --team-6: #008300;
     }
   }
   body { margin: 0; min-height: 100vh; background: var(--bg); font-family: Arial, Helvetica, sans-serif; color: var(--text); }
@@ -240,6 +251,11 @@
   .board-row-main .bname { width: 117px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-weight: bold; }
   .board-row-main .bstatus { width: 20px; flex-shrink: 0; text-align: center; }
   .board-row-main .bpct { width: 30px; flex-shrink: 0; text-align: right; font-family: monospace; font-weight: bold; }
+  /* Scorecard's future-month roster (F3Go30-enwp follow-up): same .board-row-main a day-scoped
+     board-row uses, but with no status/pct columns to balance against — let the name run free
+     instead of sitting pinned to a 117px column meant to line up with those. */
+  .board-row-main.roster { justify-content: flex-start; }
+  .board-row-main.roster .bname { width: auto; }
   /* F3Go30 pax-detail: taps (not just hover) reveal the badge's meaning — `title` alone is a
      no-op on touch, and the badge sits inside a clickable tile/row so a tap has to be caught and
      stopped here before it reaches that ancestor's own click handler (see the delegated
@@ -258,6 +274,46 @@
   .checkin-status-badge.tip-open .badge-tip { opacity: 1; visibility: visible; }
   .board-row-bonuses { display: flex; gap: 3px; margin-top: 3px; padding-left: 4px; }
   .board-row-bonuses .bonus-type-code { font-size: 10px; padding: 0 4px; }
+
+  /* F3Go30-enwp: Scorecard screen (HIM Ladder + Top Teams) */
+  .sc-tabs { display: flex; gap: 6px; margin: 4px 0 14px; }
+  .sc-tab { flex: 1; padding: 10px; font: inherit; font-size: 14px; font-weight: bold; cursor: pointer;
+    border: 1px solid var(--border); background: var(--input-bg); color: var(--text); border-radius: 10px; }
+  .sc-tab.on { background: var(--brand-bg); color: var(--brand-contrast); border-color: var(--brand-bg); }
+  .sc-metric-row { display: flex; gap: 6px; margin-bottom: 14px; }
+  /* F3Go30-enwp follow-up: same .hidden-loses-to-a-later-same-specificity-rule trap already fixed
+     for .announce-overlay above — .sc-metric-row/.sc-podium's own display:flex/grid are declared
+     after plain .hidden in this stylesheet, so toggling the hidden class alone did nothing for
+     the future-month roster view. Two-class selectors outrank both regardless of order. */
+  .sc-metric-row.hidden, .sc-podium.hidden { display: none; }
+  .sc-metric-btn { flex: 1; padding: 8px; font: inherit; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--input-bg); color: var(--text); border-radius: 8px; }
+  .sc-metric-btn.on { background: var(--soft-bg); color: var(--brand); border-color: var(--soft-border); font-weight: bold; }
+  /* Winner's-stage podium: gold centered and tallest, silver left, bronze right — same visual
+     order as the docs/scorecards/option-a-him-ladder.html mockup this screen is built from. */
+  .sc-podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 0; align-items: end; margin: 4px 0 18px; }
+  .sc-plinth { text-align: center; }
+  .sc-medal { font-size: 20px; line-height: 1; }
+  .sc-pname { font-weight: bold; font-size: 14px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sc-pteam { font-size: 11px; margin-top: 1px; font-weight: bold; }
+  .sc-pscore { font-size: 22px; font-weight: bold; margin-top: 2px; font-family: monospace; }
+  .sc-stand { margin-top: 10px; background: var(--soft-bg); border: 1px solid var(--soft-border); border-bottom: none;
+    display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold; color: var(--text-faint); }
+  .sc-plinth.p1 .sc-stand { height: 56px; border-radius: 10px 10px 0 0; }
+  .sc-plinth.p2 .sc-stand { height: 38px; border-radius: 10px 0 0 0; border-right: none; }
+  .sc-plinth.p3 .sc-stand { height: 26px; border-radius: 0 10px 0 0; border-left: none; }
+  .sc-ladder { display: flex; flex-direction: column; gap: 3px; }
+  .sc-lrow { display: grid; grid-template-columns: 26px 1fr 48px; align-items: center; gap: 8px; padding: 6px; border-radius: 8px; }
+  .sc-lrow.me { background: var(--soft-bg); outline: 2px solid var(--brand); }
+  .sc-lrank { font-size: 12px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .sc-lmain { min-width: 0; }
+  .sc-lname { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .sc-tchip { font-size: 10px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+  .sc-tchip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .sc-lbarwrap { height: 10px; background: var(--soft-bg); border: 1px solid var(--soft-border); border-radius: 5px; margin-top: 3px; }
+  .sc-lbar { height: 8px; border-radius: 4px; }
+  .sc-lscore { font-size: 15px; font-weight: bold; text-align: right; font-variant-numeric: tabular-nums; font-family: monospace; }
+  .sc-gapline { font-size: 12px; color: var(--brand); padding: 2px 8px 8px 42px; }
   /* F3Go30: the chart itself (and now the legend line under it) already reads as the bottom of
      this card — the full 22px .card padding below that reads as dead space, so trim it back. */
   .chart-card { margin-top: 12px; padding-bottom: 12px; }
@@ -516,6 +572,9 @@
         <button type="button" class="settings-menu-item" id="settingsHowBtn">How It Works</button>
         <button type="button" class="settings-menu-item" id="settingsFaqBtn">FAQ</button>
         <button type="button" class="settings-menu-item" id="settingsBonusBtn">Log Bonus Points</button>
+        <!-- F3Go30-enwp: HIM Ladder + Top Teams — the app-native successor to the tracker
+             spreadsheet's HIM Score/Team Score sheets (see docs/scorecards/). -->
+        <button type="button" class="settings-menu-item" id="settingsScorecardBtn">Scorecard</button>
         <button type="button" class="settings-menu-item" id="settingsFeedbackBtn">Send Feedback</button>
         <button type="button" class="settings-menu-item" id="settingsLogoutBtn">Logout</button>
       </div>
@@ -952,6 +1011,46 @@
       </div>
     </div>
 
+    <!-- F3Go30-enwp: Scorecard — HIM Ladder (every PAX ranked) + Top Teams (every team ranked by
+         normalized/average score), built from the dashboard payload already cached in
+         state.board (paxBoard is every PAX grouped by team) — no separate fetch. -->
+    <div id="step-scorecard" class="hidden">
+      <!-- F3Go30-enwp follow-up: month nav pinned above the tabs — shared by both Ladder and Top
+           Teams views (one month context for the whole screen), same date-nav-btn/card-head-row
+           pattern as the check-in calendar's calPrevMonthBtn/calNextMonthBtn. Bounded to at most
+           SCORECARD_MAX_MONTHS_BACK_ months behind the real current month; never forward past it
+           (a future month has no scores yet). -->
+      <div class="card-head-row">
+        <button id="scPrevMonthBtn" class="date-nav-btn" title="Previous month"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <h2 id="scMonthNavLabel" style="margin:0;flex:1;text-align:center;">&nbsp;</h2>
+        <button id="scNextMonthBtn" class="date-nav-btn" title="Next month"><svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+
+      <div class="sc-tabs">
+        <button type="button" class="sc-tab" id="scTabLadder">The Grind Board</button>
+        <button type="button" class="sc-tab" id="scTabTeams">Top Teams</button>
+      </div>
+
+      <div id="scLadderView">
+        <div class="card">
+          <h2 style="margin-top:0;" id="scLadderTitle">The Grind Board</h2>
+          <p class="muted" style="margin-top:-6px;" id="scLadderSubtitle">Every PAX ranked, month to date.</p>
+          <div class="sc-metric-row" id="scMetrics"></div>
+          <div class="sc-podium" id="scPodium"></div>
+          <div class="sc-ladder" id="scLadder"></div>
+        </div>
+      </div>
+
+      <div id="scTeamsView" class="hidden">
+        <div class="card">
+          <h2 style="margin-top:0;">Top Teams</h2>
+          <p class="muted" style="margin-top:-6px;">Teams ranked by average score per PAX — the same
+            normalization as the Team Score sheet.</p>
+          <div class="sc-ladder" id="scTeams"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="step-paxDetail" class="hidden">
       <div class="card-head-row">
         <button id="paxDetailPrevBtn" class="date-nav-btn" title="Previous teammate"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -1028,7 +1127,7 @@
         <input type="date" id="bonusWhen">
         <label class="field-label">Type</label>
         <select id="bonusType"></select>
-        <label class="field-label">What / Where / Who</label>
+        <label class="field-label">Description (required)</label>
         <textarea id="bonusMessage" rows="3" placeholder="What happened?"></textarea>
         <label class="field-label" id="bonusLinkLabel">Slack Link</label>
         <input type="text" id="bonusLink" placeholder="https://...slack.com/...">
@@ -1084,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0";
+  var STATIC_BUILD_VERSION_ = "2.6.1";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1790,7 +1889,7 @@
     viewDate: null,
     dashboardLoading: false,
     dashboardPrefetchPromise: null,
-    bonusReturnStep: 'checkin',
+    mainViewReturnStep: 'checkin',
     bonusEntries: [],
     bonusEditingRowIndex: null,
     bonusEditingOriginalWhenIso: null,
@@ -2073,19 +2172,24 @@
   applyVersionState_(STATIC_BUILD_VERSION_, null);
 
   // Steps whose Back now lives in the persistent header (headerBackBtn) instead of a per-card
-  // button, keyed to their fixed destination step. 'bonus' isn't listed here — its Back target
-  // is dynamic (state.bonusReturnStep, set below); headerBackBtn's click handler special-cases it.
+  // button, keyed to their fixed destination step. 'bonus' and 'scorecard' aren't listed here —
+  // both are reachable from either 'checkin' or 'dashboard' (the header menu that opens
+  // Scorecard, and the bonusBtn that opens Bonus, are both available from every main step), so
+  // their Back target is dynamic (state.mainViewReturnStep, set below) rather than fixed;
+  // headerBackBtn's click handler special-cases both. F3Go30-izly: Scorecard used to hardcode
+  // 'dashboard' here, so opening it straight from Checkin (never having visited Dashboard this
+  // session) sent Back to an empty, never-rendered Dashboard skeleton.
   var HEADER_BACK_TARGET_ = { dashboard: 'checkin', paxDetail: 'dashboard' };
 
   function showStep(name) {
-    ['identify', 'checkin', 'dashboard', 'bonus', 'signup', 'nextMonthChoice', 'paxDetail'].forEach(function(s) {
+    ['identify', 'checkin', 'dashboard', 'bonus', 'signup', 'nextMonthChoice', 'paxDetail', 'scorecard'].forEach(function(s) {
       $('step-' + s).classList.toggle('hidden', s !== name);
     });
     state.currentStep = name;
-    $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name] && name !== 'bonus');
+    $('headerBackBtn').classList.toggle('hidden', !HEADER_BACK_TARGET_[name] && name !== 'bonus' && name !== 'scorecard');
     $('moreBtn').classList.toggle('hidden', name !== 'dashboard');
-    $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice' || name === 'paxDetail');
-    if (name === 'checkin' || name === 'dashboard') state.bonusReturnStep = name;
+    $('bonusBtn').classList.toggle('hidden', name === 'identify' || name === 'bonus' || name === 'signup' || name === 'nextMonthChoice' || name === 'paxDetail' || name === 'scorecard');
+    if (name === 'checkin' || name === 'dashboard') state.mainViewReturnStep = name;
   }
 
   /** F3Go30-ez8v: a known PAX who's registered for NEXT month but not the current one — offer the
@@ -3404,6 +3508,7 @@
     // the trigger itself stays enabled on every step rather than hidden pre-identify.
     var hasIdentity = !!state.f3Name;
     $('settingsBonusBtn').disabled = !hasIdentity;
+    $('settingsScorecardBtn').disabled = !hasIdentity;
     $('settingsFeedbackBtn').disabled = !hasIdentity;
     $('settingsLogoutBtn').disabled = !hasIdentity;
     $('settingsModal').classList.remove('hidden');
@@ -3436,6 +3541,13 @@
     if ($('settingsBonusBtn').disabled) return;
     hideSettingsMenu_();
     openBonusManage_();
+  });
+
+  // F3Go30-enwp
+  $('settingsScorecardBtn').addEventListener('click', function() {
+    if ($('settingsScorecardBtn').disabled) return;
+    hideSettingsMenu_();
+    openScorecard_();
   });
 
   // F3Go30-1pqo.4
@@ -4320,6 +4432,384 @@
     showStep('dashboard');
   }
 
+  // ── Step: scorecard (F3Go30-enwp) ───────────────────────────────────────
+  // HIM Ladder + Top Teams, both built from d.paxBoard (already every PAX grouped by team, with
+  // month-to-date score/rawScore/bonusByType per row and each group's avgScore) — the same
+  // payload renderDashboard_ already has cached in state.board, so opening Scorecard never needs
+  // a new server field or a second endpoint.
+  var SCORECARD_TEAM_COLOR_VARS_ = ['--team-1', '--team-2', '--team-3', '--team-4', '--team-5', '--team-6'];
+  var SCORECARD_METRICS_ = [
+    { key: 'score', label: 'Total score' },
+    { key: 'rawScore', label: 'Reps Completed' },
+    { key: 'bonusTotal', label: 'Bonus points' }
+  ];
+  var scorecardState_ = { view: 'ladder', metric: 'score', data: null, monthKey: null, loading: false };
+  var SCORECARD_MAX_MONTHS_BACK_ = 2;
+  // One month forward lets a PAX check team rosters for a just-opened next month before anyone
+  // has scored anything — Top Teams still lists every signed-up PAX per team even at all-zero.
+  var SCORECARD_MAX_MONTHS_FORWARD_ = 1;
+
+  function bonusTotalOf_(bonusByType) {
+    var sum = 0;
+    Object.keys(bonusByType || {}).forEach(function(k) { sum += (bonusByType[k] || 0); });
+    return sum;
+  }
+
+  /** Stable team->color assignment for one render, in paxBoard's own order (already sorted by
+   * avgScore desc by groupByTeam_) — same map used by both the ladder's team chips and the Top
+   * Teams bars, so a team reads as the same color in both views. */
+  function scorecardTeamColorMap_(paxBoard) {
+    var map = {};
+    (paxBoard || []).forEach(function(group, i) {
+      map[group.name] = 'var(' + SCORECARD_TEAM_COLOR_VARS_[i % SCORECARD_TEAM_COLOR_VARS_.length] + ')';
+    });
+    return map;
+  }
+
+  function renderScorecardMetrics_() {
+    var box = $('scMetrics');
+    box.innerHTML = '';
+    SCORECARD_METRICS_.forEach(function(m) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sc-metric-btn' + (m.key === scorecardState_.metric ? ' on' : '');
+      b.textContent = m.label;
+      b.addEventListener('click', function() {
+        scorecardState_.metric = m.key;
+        renderLadder_(scorecardState_.data);
+        renderScorecardMetrics_();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  /** Ranks two PAX for the ladder/podium by the active metric, breaking a tie on that metric by
+   * longest streak (Stuart, 2026-09-01) before falling back to alphabetical name for a full tie
+   * (metric AND streak both equal). Never overrides an outright higher metric value — streak
+   * only decides genuine ties. Its own function so the tiebreak rule is unit-testable without
+   * the DOM-heavy podium/row building the rest of renderLadder_ does. */
+  function scorecardPaxComparator_(metric) {
+    return function(a, b) {
+      return (b[metric] || 0) - (a[metric] || 0) || (b.streak || 0) - (a.streak || 0) || a.name.localeCompare(b.name);
+    };
+  }
+
+  function renderLadder_(d) {
+    var teamColors = scorecardTeamColorMap_(d.paxBoard);
+    var pax = [];
+    (d.paxBoard || []).forEach(function(group) {
+      (group.members || []).forEach(function(m) {
+        pax.push(Object.assign({}, m, { teamGroup: group.name, bonusTotal: bonusTotalOf_(m.bonusByType) }));
+      });
+    });
+    var metric = scorecardState_.metric;
+    pax.sort(scorecardPaxComparator_(metric));
+
+    var podiumEl = $('scPodium');
+    podiumEl.innerHTML = '';
+    // Visual order silver-gold-bronze (2nd/1st/3rd) so gold sits centered and tallest, like a
+    // real winner's stage — see docs/scorecards/option-a-him-ladder.html's renderPodium.
+    [[1, 'p2', '🥈'], [0, 'p1', '🥇'], [2, 'p3', '🥉']].forEach(function(slot) {
+      var p = pax[slot[0]];
+      if (!p) return;
+      var div = document.createElement('div');
+      div.className = 'sc-plinth ' + slot[1];
+      div.innerHTML =
+        '<div class="sc-medal">' + slot[2] + '</div>' +
+        '<div class="sc-pname">' + escapeHtml_(p.name) + '</div>' +
+        '<div class="sc-pteam" style="color:' + teamColors[p.teamGroup] + ';">' + escapeHtml_(p.teamGroup) + '</div>' +
+        '<div class="sc-pscore">' + p[metric] + '</div>' +
+        '<div class="sc-stand">' + (slot[0] + 1) + '</div>';
+      podiumEl.appendChild(div);
+    });
+
+    var max = Math.max(1, Math.max.apply(null, pax.map(function(p) { return p[metric] || 0; }).concat(0)));
+    var ladderEl = $('scLadder');
+    ladderEl.innerHTML = '';
+    pax.forEach(function(p, i) {
+      var isMe = p.name === d.f3Name;
+      var color = teamColors[p.teamGroup];
+      var row = document.createElement('div');
+      row.className = 'sc-lrow' + (isMe ? ' me' : '');
+      row.innerHTML =
+        '<div class="sc-lrank">' + (i + 1) + '</div>' +
+        '<div class="sc-lmain">' +
+        '<div class="sc-lname"><b>' + escapeHtml_(p.name) + (isMe ? ' (you)' : '') + '</b>' +
+        '<span class="sc-tchip"><i style="background:' + color + ';"></i>' + escapeHtml_(p.teamGroup) + '</span></div>' +
+        '<div class="sc-lbarwrap"><div class="sc-lbar" style="width:' +
+        Math.max(2, (Math.max(0, p[metric] || 0) / max) * 100) + '%;background:' + color + ';"></div></div>' +
+        '</div>' +
+        '<div class="sc-lscore">' + p[metric] + '</div>';
+      ladderEl.appendChild(row);
+      if (isMe && i > 0) {
+        var above = pax[i - 1];
+        var gap = (above[metric] || 0) - (p[metric] || 0);
+        var gapline = document.createElement('div');
+        gapline.className = 'sc-gapline';
+        gapline.innerHTML = gap <= 0
+          ? 'Level with <b>' + escapeHtml_(above.name) + '</b> — a single point breaks the tie.'
+          : gap + ' point' + (gap === 1 ? '' : 's') + ' behind <b>' + escapeHtml_(above.name) + '</b>.';
+        ladderEl.appendChild(gapline);
+      }
+    });
+  }
+
+  function renderTopTeams_(d) {
+    var teamColors = scorecardTeamColorMap_(d.paxBoard);
+    var groups = d.paxBoard || [];
+    var max = Math.max(1, Math.max.apply(null, groups.map(function(g) { return g.avgScore || 0; }).concat(0)));
+    var box = $('scTeams');
+    box.innerHTML = '';
+    groups.forEach(function(g, i) {
+      var color = teamColors[g.name];
+      var row = document.createElement('div');
+      row.className = 'sc-lrow';
+      row.innerHTML =
+        '<div class="sc-lrank">' + (i + 1) + '</div>' +
+        '<div class="sc-lmain">' +
+        '<div class="sc-lname"><b>' + escapeHtml_(g.name) + '</b>' +
+        '<span class="sc-tchip"><i style="background:' + color + ';"></i>' + g.members.length + ' PAX</span></div>' +
+        '<div class="sc-lbarwrap"><div class="sc-lbar" style="width:' +
+        Math.max(2, (Math.max(0, g.avgScore || 0) / max) * 100) + '%;background:' + color + ';"></div></div>' +
+        '</div>' +
+        '<div class="sc-lscore">' + (g.avgScore || 0).toFixed(1) + '</div>';
+      box.appendChild(row);
+    });
+  }
+
+  /** True once at least one PAX on the board has a nonzero score, rawScore, or bonus point —
+   * i.e. there's something real to rank. Early on day 1 of a freshly-started month nobody has
+   * checked in yet, so every row reads 0 across the board; ranking 0-vs-0 is meaningless even
+   * though the viewer IS registered (F3Go30-csfe.2 AC2). */
+  function scorecardBoardHasAnyScore_(paxBoard) {
+    return (paxBoard || []).some(function(group) {
+      return (group.members || []).some(function(m) {
+        return (m.score || 0) > 0 || (m.rawScore || 0) > 0 || bonusTotalOf_(m.bonusByType) > 0;
+      });
+    });
+  }
+
+  /** A month with nothing meaningful to rank has no "you" panel or ranking to show (F3Go30-enwp
+   * follow-up, F3Go30-csfe.2) — that's when renderScorecard_ swaps the ladder/podium for
+   * renderScorecardRoster_ instead. Two independent triggers, both server-grounded rather than
+   * calendar-guessed: the viewer isn't registered in this month (`registered`,
+   * handleCheckinDashboard_, F3Go30-csfe.1), or the board simply has no scores yet (a real,
+   * registered month on day 1 before anyone has checked in). An earlier version compared
+   * d.monthKey against the client's own clock instead, which broke every month boundary the
+   * instant "next month" became "today" and silently rendered a ranked podium for a month
+   * nobody had real scores in. Neither check here depends on what date the client thinks it is. */
+  function scorecardIsRosterOnly_(d) {
+    return d.registered === false || !scorecardBoardHasAnyScore_(d.paxBoard);
+  }
+
+  /** Plain "who's on what team" list for a future month — same .board-group/.board-row markup
+   * and look as the Dashboard's own #dPaxBoard (renderDashboard_), reused for visual consistency,
+   * but built fresh here rather than calling into that function: its row-building is wired to
+   * day-of-month specifics (dayIndex/todayIndex/yesterdayIndex, daySegments mini-bars, check-in
+   * status badges, bonus chips) that don't exist for a month nobody has checked into yet — a
+   * future-dated PAX board is just a name list grouped by team, nothing else. Not clickable into
+   * pax-detail for the same reason: there's no day-scoped detail to show there yet. */
+  function renderScorecardRoster_(d) {
+    var box = $('scLadder');
+    box.innerHTML = '';
+    (d.paxBoard || []).forEach(function(group) {
+      var groupEl = document.createElement('div');
+      groupEl.className = 'board-group';
+      var head = document.createElement('div');
+      head.className = 'board-head';
+      head.innerHTML = '<span>' + escapeHtml_(group.name) + '</span><span>' + group.members.length + ' PAX</span>';
+      groupEl.appendChild(head);
+      var rowsEl = document.createElement('div');
+      rowsEl.className = 'board-rows';
+      (group.members || []).forEach(function(m) {
+        var row = document.createElement('div');
+        row.className = 'board-row' + (m.name === d.f3Name ? ' me' : '');
+        row.innerHTML = '<div class="board-row-main roster"><span class="bname">' + escapeHtml_(m.name) + '</span></div>';
+        rowsEl.appendChild(row);
+      });
+      groupEl.appendChild(rowsEl);
+      box.appendChild(groupEl);
+    });
+  }
+
+  function setScorecardView_(view) {
+    scorecardState_.view = view;
+    $('scTabLadder').classList.toggle('on', view === 'ladder');
+    $('scTabTeams').classList.toggle('on', view === 'teams');
+    $('scLadderView').classList.toggle('hidden', view !== 'ladder');
+    $('scTeamsView').classList.toggle('hidden', view !== 'teams');
+  }
+
+  function renderScorecard_(d) {
+    scorecardState_.data = d;
+    scorecardState_.monthKey = d.monthKey || scorecardState_.monthKey;
+    var rosterOnly = scorecardIsRosterOnly_(d);
+    $('scLadderTitle').textContent = rosterOnly ? 'Team Roster' : 'The Grind Board';
+    $('scLadderSubtitle').textContent = rosterOnly
+      ? "Who's signed up so far, by team — nothing scored yet."
+      : 'Every PAX ranked, month to date.';
+    $('scMetrics').classList.toggle('hidden', rosterOnly);
+    $('scPodium').classList.toggle('hidden', rosterOnly);
+    if (rosterOnly) {
+      renderScorecardRoster_(d);
+    } else {
+      renderScorecardMetrics_();
+      renderLadder_(d);
+    }
+    renderTopTeams_(d);
+    renderScorecardMonthNav_();
+  }
+
+  $('scTabLadder').addEventListener('click', function() { setScorecardView_('ladder'); });
+  $('scTabTeams').addEventListener('click', function() { setScorecardView_('teams'); });
+
+  /** Which month Scorecard should default-open on (F3Go30-enwp.1). The first few days of a
+   * fresh month have little or no real data yet — F3Go30-csfe.2 already keeps the podium/ladder
+   * from rendering over an all-zero board, but a PAX opening Scorecard on the 2nd still had to
+   * manually page back one month every time to see anything ranked. Defaults to the previous
+   * month through day 5, then the real current month from day 6 on. Pure and self-contained
+   * (takes "today" and the available-months list as params rather than reading
+   * state.viewDate/state.availableMonths itself) so it's unit-testable without the DOM/state
+   * harness — see calMonthIndex_ for the state-coupled sibling this deliberately doesn't share,
+   * since extracting a function for a standalone test can't drag its module-scoped `state` along.
+   * Falls back to the real current month whenever there's no earlier month to default to (AC3:
+   * the very first tracker month ever) or availableMonths hasn't loaded yet. */
+  function scorecardDefaultMonthKey_(today, availableMonths) {
+    var currentKey = monthKeyOf_(today);
+    if (today.getDate() > 5) return currentKey;
+    var months = availableMonths || [];
+    var idx = -1;
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].monthKey === currentKey) { idx = i; break; }
+    }
+    return (idx > 0) ? months[idx - 1].monthKey : currentKey;
+  }
+
+  /** Month nav pinned above both Scorecard tabs (F3Go30-enwp follow-up) — lets a PAX look back at
+   * how a recent month shook out, capped at SCORECARD_MAX_MONTHS_BACK_ months behind the real
+   * current month (not state.viewDate, which can be dragged around by check-in day nav) and never
+   * forward past it, since a future month has no scores yet. Reuses state.board/loadDashboard_ —
+   * same cache and fetch path the dashboard and Scorecard's initial open already use, so paging
+   * back costs a fetch only the first time a given month is viewed. */
+  function scorecardMonthBounds_() {
+    var months = state.availableMonths || [];
+    var todayIdx = calMonthIndex_(monthKeyOf_(new Date()));
+    if (todayIdx === -1) return { minIdx: -1, maxIdx: -1 };
+    return {
+      minIdx: Math.max(0, todayIdx - SCORECARD_MAX_MONTHS_BACK_),
+      maxIdx: Math.min(months.length - 1, todayIdx + SCORECARD_MAX_MONTHS_FORWARD_)
+    };
+  }
+
+  function renderScorecardMonthNav_() {
+    var idx = calMonthIndex_(scorecardState_.monthKey);
+    var bounds = scorecardMonthBounds_();
+    $('scMonthNavLabel').textContent = scorecardState_.loading ? 'Loading…' : calMonthLabel_(scorecardState_.monthKey);
+    $('scPrevMonthBtn').disabled = scorecardState_.loading || idx === -1 || idx <= bounds.minIdx;
+    $('scNextMonthBtn').disabled = scorecardState_.loading || idx === -1 || idx >= bounds.maxIdx;
+  }
+
+  /** A state.board[monthKey] entry only counts as usable here once it carries paxBoard —
+   * patchBoardDayFacts_ (the check-in calendar's own month nav, monthGrid action) can plant a
+   * state.board record with only day-facts fields and no paxBoard at all, which a plain
+   * `state.board[monthKey]` truthiness check used to mistake for "already loaded" and render as
+   * a permanently empty board (caught live: Scorecard opened before prefetchDashboard_'s
+   * background dashboard fetch — the one that actually carries paxBoard — had landed, and
+   * nothing was ever wired to re-render Scorecard once it did land in the background). */
+  function scorecardBoardCached_(monthKey) {
+    var b = state.board[monthKey];
+    return (b && Array.isArray(b.paxBoard)) ? b : null;
+  }
+
+  /** F3Go30-iwms: turning loading OFF must not blindly force-unhide #scMetrics/#scPodium — that
+   * would override whatever renderScorecard_'s own rosterOnly decision (F3Go30-csfe.2) already
+   * made moments earlier in the same .then()-then-.finally() chain, exposing a roster-only
+   * month's podium still holding the PREVIOUS ranked month's stale content (renderLadder_, the
+   * only thing that rebuilds #scPodium's innerHTML, never runs for a roster-only month). Turning
+   * loading ON always hides both regardless — nothing meaningful to show while a fetch is in
+   * flight — but turning it OFF defers to scorecardState_.data's own rosterOnly status. */
+  function scorecardLoadingUi_(on) {
+    scorecardState_.loading = on;
+    var rosterOnly = on || !scorecardState_.data || scorecardIsRosterOnly_(scorecardState_.data);
+    $('scMetrics').classList.toggle('hidden', rosterOnly);
+    $('scPodium').classList.toggle('hidden', rosterOnly);
+    if (on) {
+      $('scLadder').innerHTML = '<p class="muted">Loading…</p>';
+      $('scTeams').innerHTML = '';
+    }
+    renderScorecardMonthNav_();
+  }
+
+  /** Resolves with the full dashboard payload for monthKey — from cache if already fully loaded,
+   * otherwise by fetching it. For the real current month specifically, chains onto
+   * prefetchDashboard_'s in-flight promise when there is one (the common "just identified,
+   * immediately opened Scorecard" case) rather than firing a redundant second request for the
+   * same day; every other month just fetches fresh, same as before. */
+  function loadScorecardMonthData_(monthKey) {
+    var cached = scorecardBoardCached_(monthKey);
+    if (cached) return Promise.resolve(cached);
+    var isRealCurrentMonth = monthKey === monthKeyOf_(new Date());
+    if (isRealCurrentMonth && state.dashboardPrefetchPromise) {
+      return state.dashboardPrefetchPromise.then(function() {
+        return scorecardBoardCached_(monthKey) || state.board[monthKey];
+      });
+    }
+    var months = state.availableMonths || [];
+    var target = months.filter(function(m) { return m.monthKey === monthKey; })[0];
+    return loadDashboard_(target ? target.startDateIso : undefined, { silent: true });
+  }
+
+  function loadScorecardMonth_(monthKey) {
+    scorecardState_.monthKey = monthKey;
+    var cached = scorecardBoardCached_(monthKey);
+    if (cached) {
+      renderScorecard_(cached);
+      return Promise.resolve();
+    }
+    scorecardLoadingUi_(true);
+    return loadScorecardMonthData_(monthKey)
+      .then(function(payload) { if (payload) renderScorecard_(payload); })
+      .catch(function(err) { showApiError_('dashboard', err); })
+      .finally(function() { scorecardLoadingUi_(false); });
+  }
+
+  function navigateScorecardMonth_(delta) {
+    if (scorecardState_.loading) return;
+    var months = state.availableMonths || [];
+    var idx = calMonthIndex_(scorecardState_.monthKey);
+    var newIdx = idx + delta;
+    var bounds = scorecardMonthBounds_();
+    if (idx === -1 || newIdx < bounds.minIdx || newIdx > bounds.maxIdx) return;
+    loadScorecardMonth_(months[newIdx].monthKey);
+  }
+
+  $('scPrevMonthBtn').addEventListener('click', function() { navigateScorecardMonth_(-1); });
+  $('scNextMonthBtn').addEventListener('click', function() { navigateScorecardMonth_(1); });
+
+  /** Opens Scorecard from the current dashboard payload if it's already fully cached
+   * (state.board — the common case, since Scorecard is only reachable once the dashboard has
+   * loaded), otherwise shows the screen right away with a loading state and fills it in once
+   * loadScorecardMonthData_ resolves (chaining onto the background prefetch already in flight
+   * rather than blocking navigation on a fresh fetch). Defaults to the real current month except
+   * during its first few days (scorecardDefaultMonthKey_, F3Go30-enwp.1), regardless of what
+   * day/month check-in nav happens to be parked on. */
+  function openScorecard_() {
+    var monthKey = scorecardDefaultMonthKey_(new Date(), state.availableMonths);
+    scorecardState_.monthKey = monthKey;
+    setScorecardView_('ladder');
+    showStep('scorecard');
+    var cached = scorecardBoardCached_(monthKey);
+    if (cached) {
+      renderScorecard_(cached);
+      return;
+    }
+    scorecardLoadingUi_(true);
+    loadScorecardMonthData_(monthKey)
+      .then(function(payload) { if (payload) renderScorecard_(payload); })
+      .catch(function(err) { showApiError_('dashboard', err); })
+      .finally(function() { scorecardLoadingUi_(false); });
+  }
+
   function loadDashboard_(dateISO, opts) {
     var silent = !!(opts && opts.silent);
     if (!silent) hideApiError_();
@@ -4375,8 +4865,13 @@
       // keeps the banner up so cached rendering never masks an ongoing outage.
       hideApiError_();
       var fresh = state.board[monthKeyOf_(new Date())];
+      // F3Go30-e4r0: by the time this background fetch resolves the PAX may have navigated to
+      // another step entirely (Scorecard, Bonus, ...) — repainting here would call
+      // renderDashboard_'s unconditional showStep('dashboard') and silently yank them back.
+      // Same guard repaintCurrentView_ already uses for the reconnect-poll's silent repaint.
       if (fresh && fresh.dayDates.indexOf(todayIso) !== -1 &&
-          state.viewDate && isoDate_(state.viewDate) === todayIso) {
+          state.viewDate && isoDate_(state.viewDate) === todayIso &&
+          state.currentStep === 'dashboard') {
         renderDashboard_(fresh, fresh.dayDates.indexOf(todayIso));
       }
     }).catch(function() { /* swallowed — the already-rendered cached copy stays on screen */ });
@@ -4587,7 +5082,7 @@
   $('paxDetailPrevBtn').addEventListener('click', function() { stepPaxDetail_(-1); });
   $('paxDetailNextBtn').addEventListener('click', function() { stepPaxDetail_(1); });
   $('headerBackBtn').addEventListener('click', function() {
-    if (state.currentStep === 'bonus') { showStep(state.bonusReturnStep); return; }
+    if (state.currentStep === 'bonus' || state.currentStep === 'scorecard') { showStep(state.mainViewReturnStep); return; }
     var target = HEADER_BACK_TARGET_[state.currentStep];
     if (target) showStep(target);
   });
@@ -4597,7 +5092,7 @@
   var BONUS_ERROR_TEXT_ = {
     invalid_type: 'Please choose a bonus type.',
     invalid_when: 'Please choose a valid date.',
-    message_required: 'Please describe what happened.',
+    message_required: 'Please enter an activity description.',
     link_required: 'This bonus type needs a Slack link before it counts.',
     invalid_link: 'That doesn’t look like a valid link (must start with http:// or https://).',
     not_found: 'That entry could not be found — please refresh and try again.',
