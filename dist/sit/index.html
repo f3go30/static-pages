@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-fAzP67KALcpqv7kMCnopRIQt10fLs4mFw5c0qqi6ReU=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-7JjLmQxLnhB/PoofdPA6yCOiee9BZZSbLEXyR+q5qqY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-QrIaIX3zdV6JetvxdeRgf1eLU4OoVjBI8c3Txdzfx1g=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-RMkqJaUIjTPFz4t74oCbIzqQpLEc7H+E3X8r8JAqosw='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1183,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.12";
+  var STATIC_BUILD_VERSION_ = "2.6.0.13";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4705,10 +4705,18 @@
     return (b && Array.isArray(b.paxBoard)) ? b : null;
   }
 
+  /** F3Go30-iwms: turning loading OFF must not blindly force-unhide #scMetrics/#scPodium — that
+   * would override whatever renderScorecard_'s own rosterOnly decision (F3Go30-csfe.2) already
+   * made moments earlier in the same .then()-then-.finally() chain, exposing a roster-only
+   * month's podium still holding the PREVIOUS ranked month's stale content (renderLadder_, the
+   * only thing that rebuilds #scPodium's innerHTML, never runs for a roster-only month). Turning
+   * loading ON always hides both regardless — nothing meaningful to show while a fetch is in
+   * flight — but turning it OFF defers to scorecardState_.data's own rosterOnly status. */
   function scorecardLoadingUi_(on) {
     scorecardState_.loading = on;
-    $('scMetrics').classList.toggle('hidden', on);
-    $('scPodium').classList.toggle('hidden', on);
+    var rosterOnly = on || !scorecardState_.data || scorecardIsRosterOnly_(scorecardState_.data);
+    $('scMetrics').classList.toggle('hidden', rosterOnly);
+    $('scPodium').classList.toggle('hidden', rosterOnly);
     if (on) {
       $('scLadder').innerHTML = '<p class="muted">Loading…</p>';
       $('scTeams').innerHTML = '';
