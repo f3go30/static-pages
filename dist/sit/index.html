@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-X8oegA52VSPM0ZwqVr1h5wHQsKIYKOlIKPAL/lrGpfQ=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-/bmNih6+X19cJ4NcKk2ck/2geYNjkxiX5M3G8K46YDY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-rFcpmQVtdJmDMcl8LxiwkBWmjpgRBQGvl0LMGd6lI9A=' 'sha256-TptWXro/QSakJiUsVbByDGpzTTFSH6ZtWZpWsfSzUIM=' 'sha256-ofwOTlPOMZA4aG+cMdsdYmJakfa99sypbIznjxe3sxk='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1183,7 +1183,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.0.10";
+  var STATIC_BUILD_VERSION_ = "2.6.0.11";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -4647,6 +4647,28 @@
   $('scTabLadder').addEventListener('click', function() { setScorecardView_('ladder'); });
   $('scTabTeams').addEventListener('click', function() { setScorecardView_('teams'); });
 
+  /** Which month Scorecard should default-open on (F3Go30-enwp.1). The first few days of a
+   * fresh month have little or no real data yet — F3Go30-csfe.2 already keeps the podium/ladder
+   * from rendering over an all-zero board, but a PAX opening Scorecard on the 2nd still had to
+   * manually page back one month every time to see anything ranked. Defaults to the previous
+   * month through day 5, then the real current month from day 6 on. Pure and self-contained
+   * (takes "today" and the available-months list as params rather than reading
+   * state.viewDate/state.availableMonths itself) so it's unit-testable without the DOM/state
+   * harness — see calMonthIndex_ for the state-coupled sibling this deliberately doesn't share,
+   * since extracting a function for a standalone test can't drag its module-scoped `state` along.
+   * Falls back to the real current month whenever there's no earlier month to default to (AC3:
+   * the very first tracker month ever) or availableMonths hasn't loaded yet. */
+  function scorecardDefaultMonthKey_(today, availableMonths) {
+    var currentKey = monthKeyOf_(today);
+    if (today.getDate() > 5) return currentKey;
+    var months = availableMonths || [];
+    var idx = -1;
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].monthKey === currentKey) { idx = i; break; }
+    }
+    return (idx > 0) ? months[idx - 1].monthKey : currentKey;
+  }
+
   /** Month nav pinned above both Scorecard tabs (F3Go30-enwp follow-up) — lets a PAX look back at
    * how a recent month shook out, capped at SCORECARD_MAX_MONTHS_BACK_ months behind the real
    * current month (not state.viewDate, which can be dragged around by check-in day nav) and never
@@ -4744,10 +4766,11 @@
    * (state.board — the common case, since Scorecard is only reachable once the dashboard has
    * loaded), otherwise shows the screen right away with a loading state and fills it in once
    * loadScorecardMonthData_ resolves (chaining onto the background prefetch already in flight
-   * rather than blocking navigation on a fresh fetch). Always opens on the real current month,
-   * regardless of what day/month check-in nav happens to be parked on. */
+   * rather than blocking navigation on a fresh fetch). Defaults to the real current month except
+   * during its first few days (scorecardDefaultMonthKey_, F3Go30-enwp.1), regardless of what
+   * day/month check-in nav happens to be parked on. */
   function openScorecard_() {
-    var monthKey = monthKeyOf_(new Date());
+    var monthKey = scorecardDefaultMonthKey_(new Date(), state.availableMonths);
     scorecardState_.monthKey = monthKey;
     setScorecardView_('ladder');
     showStep('scorecard');
