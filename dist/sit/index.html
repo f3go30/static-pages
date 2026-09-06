@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-5pO7RtfXVsVA0F6qMQtJSH6FMccYRKaro9q0lLq7Onk=' 'sha256-Tf0MP+sEk66UuXSv2CzI6STIKqATQqoU144bZnkM7MQ=' 'sha256-NXXIj/QBxnTGB4rRu1tjXJYR8w9BYStynIhsvH2yuSw='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-fDrEbBz/7tX47eq9CPpJRdOQG3LuInGASSEx+ryIl7Q=' 'sha256-Tf0MP+sEk66UuXSv2CzI6STIKqATQqoU144bZnkM7MQ=' 'sha256-A7ouMacq9K792Jq0dWdtkHlx6GAazZc3+RRyrZ8eytM='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1191,7 +1191,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.2.1";
+  var STATIC_BUILD_VERSION_ = "2.6.2.3";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -2389,13 +2389,21 @@
    * reflected in the response — the overlay is dropped instead of clobbering fresher server truth.
    * Do not "just clear on ack" instead of this comparison — that reintroduces the original
    * F3Go30-5nfj.5 race (a stale in-flight read landing AFTER the ack and clobbering the write). */
-  function reconcileWithLocalWrites_(res, issuedGen) {
+  // F3Go30-jsrf: step 1 of the dance above, split out so a second response shape (loadDashboard_'s
+  // dayDates/dayValues, below) can share the exact same writeGen/issuedGen comparison instead of
+  // re-deriving it — this project's "no duplicated logic across call sites" rule.
+  function dropAckedLocalWrites_(issuedGen) {
     var local = state.locallyWrittenIso;
-    if (!local || !Object.keys(local).length) return;
     Object.keys(local).forEach(function(dateIso) {
       var writeGen = state.writeGenByIso_[dateIso];
       if (writeGen !== undefined && writeGen < issuedGen) delete local[dateIso];
     });
+  }
+
+  function reconcileWithLocalWrites_(res, issuedGen) {
+    var local = state.locallyWrittenIso;
+    if (!local || !Object.keys(local).length) return;
+    dropAckedLocalWrites_(issuedGen);
     if (!Object.keys(local).length) return;
     (res.monthGrid || []).forEach(function(entry) {
       if (Object.prototype.hasOwnProperty.call(local, entry.dateIso)) entry.status = local[entry.dateIso];
@@ -2405,6 +2413,26 @@
     if (state.yesterdayIso && Object.prototype.hasOwnProperty.call(local, state.yesterdayIso)) {
       res.yesterdayStatus = local[state.yesterdayIso];
     }
+  }
+
+  /** F3Go30-jsrf: dashboard-shape counterpart to reconcileWithLocalWrites_ above, same F3Go30-os03
+   * D5 overlay-wins-until-superseded rule applied to loadDashboard_'s payload.dayDates/dayValues
+   * instead of identify's res.monthGrid. Needed because loadDashboard_ (fired right after identify
+   * as a silent background prefetch, or later as a revalidate) can resolve with a day's value from
+   * BEFORE a since-acked local write — applyOwnDayWrite_'s optimistic patch lives on the board
+   * record loadDashboard_ is about to replace wholesale, so without this reconciliation the stale
+   * fetched value would silently win the moment that replace happens, even though the write it
+   * predates already acked. Mutates payload.dayValues in place. */
+  function reconcileDashboardWithLocalWrites_(payload, issuedGen) {
+    var local = state.locallyWrittenIso;
+    if (!local || !Object.keys(local).length) return;
+    dropAckedLocalWrites_(issuedGen);
+    if (!Object.keys(local).length || !payload.dayDates || !payload.dayValues) return;
+    payload.dayDates.forEach(function(dateIso, i) {
+      if (Object.prototype.hasOwnProperty.call(local, dateIso)) {
+        payload.dayValues[i] = statusToValue_(local[dateIso]);
+      }
+    });
   }
 
   /** F3Go30-5nfj.5: opts.preserveView (set true only when reconciling the live identify response
@@ -2971,6 +2999,29 @@
     rec.dayValues = entries.map(function(e) { return statusToValue_(e.status); });
   }
 
+  /** F3Go30-jsrf: folds a PRIOR (dayDates, dayValues) pair back into monthKey's CURRENT record for
+   * whatever days the current record doesn't itself cover. Needed because loadDashboard_'s own
+   * response carries a narrower rolling window than the full month identify/monthGrid may already
+   * have cached — reproduced live: this (often-silent, background) dashboard fetch resolving AFTER
+   * the check-in calendar opened and cached the full month was enough, on its own, to make
+   * renderSelectionPanel_'s post-write status lookup (monthGridEntryFor_) miss a day outside that
+   * window and fall back to 'pending', with no rapid/repeated clicking involved. The current
+   * record always wins on any day both sides know about — this only prevents days outside its own
+   * window from being silently dropped. */
+  function restoreWiderBoardDayFacts_(monthKey, priorDayDates, priorDayValues) {
+    if (!priorDayDates || !priorDayDates.length) return;
+    var rec = state.board[monthKey];
+    if (!rec) return;
+    var known = {};
+    (rec.dayDates || []).forEach(function(d, i) { known[d] = rec.dayValues[i]; });
+    priorDayDates.forEach(function(d, i) {
+      if (!Object.prototype.hasOwnProperty.call(known, d)) known[d] = priorDayValues[i];
+    });
+    var dates = Object.keys(known).sort();
+    rec.dayDates = dates;
+    rec.dayValues = dates.map(function(d) { return known[d]; });
+  }
+
   /** F3Go30-os03 D3: the one accessor that derives a calendar's display grid for a monthKey from
    * state.board — always a fresh array of fresh objects (never a reference into the stored
    * record), so nothing downstream can corrupt the board by mutating what this returns. Returns
@@ -3265,10 +3316,16 @@
       .then(function() {
         state.writeGenByIso_[dateIso] = requestGen_; // F3Go30-os03 D5 — this write's ack position
         // F3Go30-os03 D3/D4: refresh the currently-painted grid from state.board (see submitCheckin_'s
-        // matching comment) — dateIso === state.selectedDateIso, always within the parked month here.
+        // matching comment).
         state.monthGrid = boardMonthGrid_(state.calMonthKey);
         updateCalCellStatus_(dateIso, status);
-        renderSelectionPanel_(dateIso);
+        // F3Go30-jsrf: dateIso is NOT guaranteed to still be state.selectedDateIso here — the PAX
+        // may have already clicked a different day while this write's round trip was in flight
+        // (renderSelectionPanel_ unconditionally reassigns state.selectedDateIso to whatever it's
+        // given). Applying a superseded click's panel/selection here would clobber the PAX's actual
+        // current selection out from under them — the exact desync symptom reported live. Same
+        // guard submitCheckin_ already uses for its matching call, just missing here.
+        if (state.selectedDateIso === dateIso) renderSelectionPanel_(dateIso);
         state.lastEditedDayIso = dateIso;
         if (dateIso === state.todayIso) { state.todayStatus = status; renderCheckinStatus_('today', status); }
         else if (dateIso === state.yesterdayIso) { state.yesterdayStatus = status; renderCheckinStatus_('yesterday', status); }
@@ -4879,6 +4936,7 @@
       $('dateNavLabel').textContent = 'Loading…';
     }
     var requestIssuedTs_ = Date.now();
+    var issuedGen_ = ++requestGen_; // F3Go30-jsrf D5 — this read's position, for reconcileDashboardWithLocalWrites_
     return callApi('dashboard', { f3Name: state.f3Name, email: state.email, dateISO: dateISO, resolvedContext: state.resolvedContext })
       .then(function(payload) {
         captureDashboardRenderTelemetry_(requestIssuedTs_, payload, null);
@@ -4888,7 +4946,17 @@
             delete state.pendingSelfWrites[dateIso];
           }
         });
+        // F3Go30-jsrf: a locally-acked write (applyOwnDayWrite_'s in-place patch onto the board
+        // record this payload is about to replace) can be newer than this read even though the
+        // read landed later — see reconcileDashboardWithLocalWrites_.
+        reconcileDashboardWithLocalWrites_(payload, issuedGen_);
+        // Capture whatever day-facts coverage this monthKey already had before the plain
+        // assignment below replaces the record — see restoreWiderBoardDayFacts_.
+        var priorRec_ = state.board[payload.monthKey];
+        var priorDayDates_ = priorRec_ && priorRec_.dayDates;
+        var priorDayValues_ = priorRec_ && priorRec_.dayValues;
         state.board[payload.monthKey] = payload;
+        restoreWiderBoardDayFacts_(payload.monthKey, priorDayDates_, priorDayValues_);
         if (!silent) renderDashboard_(payload, payload.viewDayIndex);
         return payload;
       })
