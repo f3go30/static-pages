@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-scE+Tc56UiXr0PVSh5ir7DlfpPeH8C6EbB5Q5PCj52k=' 'sha256-fZNCcf87cUmtMAqRd8jlspwZcwmh8Bv0YChm1JlNW94=' 'sha256-QrLuoFppBYR5nMnNBTv0txcy2OFOuU9epArg3RHxWYM='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-8bM49Zyb3NKk+Fna8In6wzgXexghKDzyLPXn9SOQMkg=' 'sha256-fZNCcf87cUmtMAqRd8jlspwZcwmh8Bv0YChm1JlNW94=' 'sha256-7gGrZ5tDH7NrxvMxvOUL9sU/TF+42NwUyFmRQvgFm8A='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -1191,7 +1191,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.3";
+  var STATIC_BUILD_VERSION_ = "2.6.4";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -3723,18 +3723,34 @@
   $('siteFeedbackCancelBtn').addEventListener('click', function() { $('siteFeedbackModal').classList.add('hidden'); });
   $('siteFeedbackDoneBtn').addEventListener('click', function() { $('siteFeedbackModal').classList.add('hidden'); });
 
-  // F3Go30-1pqo.10: client-only Logout — forgets the durable check-in token + snapshot (so this
-  // device stops silently resuming straight into check-in) but deliberately leaves
-  // go30SignupIdentity alone, unlike notYouLink's full clear, so the identify form still
-  // pre-fills name/email on the next visit. Reuses notYouLink's already-computed href
-  // (webapp/ns/contextDate, no id/token) rather than recomputing the same URL a second time —
-  // that navigation is what lands back on the identify form pre-filled (its fields are painted
-  // from `state`, itself loaded from the now-untouched go30SignupIdentity, on the next load).
-  // Full server-side token invalidation (PaxCache/spreadsheet) stays F3Go30-1pqo.2's scope.
+  // F3Go30-1pqo.10 + F3Go30-1pqo.2: Logout now invalidates BOTH the local cache and the
+  // server-side session token. Deliberately leaves go30SignupIdentity alone, unlike notYouLink's
+  // full clear, so the identify form still pre-fills name/email on the next visit. Reuses
+  // notYouLink's already-computed href (webapp/ns/contextDate, no id/token) rather than
+  // recomputing the same URL a second time — that navigation is what lands back on the identify
+  // form pre-filled (its fields are painted from `state`, itself loaded from the now-untouched
+  // go30SignupIdentity, on the next load).
+  //
+  // The server call authenticates by the token itself (handleCheckinLogout_, dashboardWebapp.js)
+  // so it is fetched straight from storage rather than passing any typed name/email. The local
+  // clear + navigation happen regardless of whether the server call succeeds — the PAX asked to
+  // log out and a flaky/offline network must not leave them looking signed in — but a failure is
+  // still reported to Axiom via captureClientTelemetry_ so a silently-failing invalidation is
+  // visible.
   $('settingsLogoutBtn').addEventListener('click', function() {
     if ($('settingsLogoutBtn').disabled) return;
-    clearCheckinSnapshot_();
-    location.href = $('notYouLink').href;
+    var token = loadTokenFromStorage_();
+    var finishLogout_ = function() {
+      clearCheckinSnapshot_();
+      location.href = $('notYouLink').href;
+    };
+    if (token) {
+      callApi('logout', { token: token })
+        .catch(function(err) { captureClientError_('logout', err); })
+        .finally(finishLogout_);
+    } else {
+      finishLogout_();
+    }
   });
   // F3Go30-5c2a.3: a client-minted idempotency key, stable across a hand-retried resubmission of
   // the exact same (unedited) report — the failure mode that produced three emails for one
