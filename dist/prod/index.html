@@ -19,7 +19,7 @@
      inert comment in this unbuilt source: static-pages/src/index.html is served directly (no
      stamping) by local dev and the Playwright live-check specs, and a placeholder CSP value
      would break every inline script there with no compensating benefit. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-6VpKh58AJbDrQi5ewSk4uPnGf/HwtHDLAbn0xOQ+62Q=' 'sha256-fZNCcf87cUmtMAqRd8jlspwZcwmh8Bv0YChm1JlNW94=' 'sha256-7gGrZ5tDH7NrxvMxvOUL9sU/TF+42NwUyFmRQvgFm8A='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-aKV7x9+b8McfLbH0tl0wQuZ5tyAZa9bIZAPn0NokYks=' 'sha256-Ml/EVAIv/UnMf6vqYXIcrDh74M/f9q+KJYISqtUjRFw=' 'sha256-8E2KKZrPnFcgnwPLeW/Qw59ogOP1s/IVS5eL2lqRFB4='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'self'">
 <style>
   * { box-sizing: border-box; }
   :root {
@@ -320,6 +320,7 @@
   .section-label { font-size: 14px; font-weight: bold; letter-spacing: .16em; color: var(--brand); margin: 22px 0 4px; }
   .api-error-banner { background: var(--error-bg); border-bottom: 3px solid var(--error-border); color: var(--error-fg); padding: 12px 18px; font-size: 17px; line-height: 1.5; }
   .api-error-banner strong { display: block; margin-bottom: 2px; }
+  .write-confirm-notice { background: var(--card-bg); border-bottom: 2px solid var(--border); color: var(--brand); padding: 8px 18px; font-size: 15px; line-height: 1.4; }
   .api-error-detail { margin-top: 6px; font-family: monospace; font-size: 15px; background: var(--input-bg); border: 1px solid var(--error-detail-border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* Page-level advisory banner (F3Go30-ubwl.3, generalized in F3Go30-833s.18 for the second one).
      Reuses the shared warn-* theme vars (F3Go30-dtr2) — no banner-specific colors.
@@ -495,6 +496,10 @@
          automatic. -->
     <button id="apiErrorReloadBtn" class="secondary hidden" type="button" style="margin-top:8px;">Reload page</button>
   </div>
+  <!-- F3Go30-5c2a.7: a transport-failed check-in is confirmed with the server before it is called a
+       failure. Deliberately NOT apiErrorBanner: calm, no Site-Q link, no reload button, and neither
+       element's show/hide logic touches the other. -->
+  <div id="writeConfirmNotice" class="write-confirm-notice hidden" role="status">Still saving… confirming with the server.</div>
 
   <!-- F3Go30-ubwl.3: shown on arrival from a GAS redirect (?from=gas — F3Go30-ubwl §Marker
        param, script/Utilities.js buildStaticRedirectUrl_). Page-level, above .wrap, so it never
@@ -1191,7 +1196,7 @@
   // per-env APP_VERSION — see manage-deployments.js's stampVersion) — shown immediately so the
   // footer isn't blank while the page waits on its first live identify call. null when this
   // file is served unbuilt (e.g. straight from static-pages/src for local/Playwright testing).
-  var STATIC_BUILD_VERSION_ = "2.6.5";
+  var STATIC_BUILD_VERSION_ = "2.6.6";
 </script>
 <script>
   // ── Inlined from script/IdentityCore.html (shared identity/HTTP client plumbing) ──────────
@@ -1365,6 +1370,12 @@
   // retrying one risks a duplicate signup, check-in or bonus row.
   var RETRYABLE_ACTIONS_ = ['identify', 'dashboard', 'bonusList', 'monthGrid', 'paxGoals'];
 
+  // F3Go30-5c2a.9: total attempts for a RETRYABLE_ACTIONS_ read on a transport-class failure
+  // (first try + 2 retries). Live PROD 2026-09-29 lost ~15-20% of responses per attempt, so one
+  // retry still failed ~1 read in 25-50; three attempts bring that to ~1 in 125-200. Worst case
+  // the PAX waits 3 x REQUEST_TIMEOUT_MS_ before the banner; the Syncing note shows the attempt.
+  var MAX_READ_ATTEMPTS_ = 3;
+
   var NETWORK_ERROR_MESSAGE_ = 'Couldn’t reach the server. Check your internet connection and try again.';
 
   // A request aborted because the page is going away is not a failure worth alarming anyone
@@ -1415,6 +1426,55 @@
     });
   }
 
+  /** F3Go30-5c2a.9: which leg lost the response, from where the redirect chain ended. 'echo' —
+   * script.googleusercontent.com/macros/echo answered with Drive's "unable to open the file" page
+   * (HTTP 404); 'exec' — Google bounced the POST back to /exec as a GET, so doGet rendered the
+   * Check-In HTML page (HTTP 200); 'other' — anything else. Never throws. */
+  function lostResponseMode_(res) {
+    try {
+      var url = String((res && res.url) || '');
+      if (url.indexOf('googleusercontent.com') !== -1) return 'echo';
+      if (/\/exec(\?|$)/.test(url)) return 'exec';
+    } catch (e) { /* best effort */ }
+    return 'other';
+  }
+
+  /** One attempt, parsed. Our server always answers JSON, so a body that does not parse is not
+   * its answer — it is a Google page standing in for a response that was lost after doPost may
+   * already have run (F3Go30-5c2a.9). That is raised as transport-class, like a below-HTTP loss:
+   * same PAX-facing message, same retry eligibility. A body that parses is the server's answer
+   * and callApi handles it exactly as before (HTTP error text, json.error text, no retry). */
+  function fetchParsedAttempt_(url, bodyJson, timeoutMs) {
+    var startedAt = Date.now();
+    return fetchAttempt_(url, bodyJson, timeoutMs).then(function(res) {
+      return res.json().then(function(json) {
+        return { res: res, json: json };
+      }, function() {
+        throw makeTransportError_({
+          redirected: !!res.redirected,
+          elapsedMs: Date.now() - startedAt,
+          ctx: { lostResponse: lostResponseMode_(res), httpStatus: res.status }
+        });
+      });
+    });
+  }
+
+  /** F3Go30-5c2a.9 AC5: one 'lostResponse' record per transport-class failed attempt — including
+   * one a later retry recovers, which otherwise leaves no trace — so PROD telemetry can count
+   * each loss mode. New fields live under ctx only (F3Go30-u7nk Axiom field budget). */
+  function captureLostAttempt_(action, err, attempt) {
+    var ctx = err && err.ctx;
+    captureClientTelemetry_('lostResponse', action, {
+      clientRequestId: (err && err.clientRequestId) || '',
+      ctx: {
+        mode: ctx && ctx.lostResponse ? ctx.lostResponse : (err && err.abortedAtTimeout ? 'timeout' : 'network'),
+        httpStatus: ctx && typeof ctx.httpStatus === 'number' ? ctx.httpStatus : null,
+        attempt: attempt,
+        elapsedMs: (err && typeof err.elapsedMs === 'number') ? err.elapsedMs : null
+      }
+    });
+  }
+
   /** F3Go30-5c2a.1: extracts identity of the Apps Script redirect echo endpoint (script.
    * googleusercontent.com/macros/echo?user_content_key=...) a response actually resolved to, so
    * two requests' telemetry can be compared for "same key or different key" — the evidence the
@@ -1439,6 +1499,11 @@
   // indicator must stay visible until the LAST outstanding request settles, not just the first.
   var pendingRequestCount_ = 0;
 
+  // F3Go30-5c2a.9 AC4: the current attempt of each in-flight request, keyed by a per-call
+  // sequence number, so the Syncing note can show the highest retry in flight.
+  var inFlightAttempts_ = {};
+  var inFlightSeq_ = 0;
+
   // F3Go30-os03 D5/Addendum 3: a monotonic, never-reset counter ordering identify reads against
   // this PAX's own write acks — a plain integer, not Date.now(), because a wall clock is not
   // monotonic (NTP correction, DST, a manual clock change) and the scenario this exists for is an
@@ -1448,7 +1513,11 @@
 
   function updateSyncingIndicator_() {
     var el = $('checkinSyncingNote');
-    if (el) el.classList.toggle('hidden', pendingRequestCount_ <= 0);
+    if (!el) return;
+    el.classList.toggle('hidden', pendingRequestCount_ <= 0);
+    var top = 1;
+    Object.keys(inFlightAttempts_).forEach(function(k) { if (inFlightAttempts_[k] > top) top = inFlightAttempts_[k]; });
+    el.textContent = top > 1 ? '⟳ Syncing-' + top + '…' : '⟳ Syncing…';
   }
 
   // `cmd` (F3Go30-833s.9) selects the server dispatcher per call rather than per page: this one
@@ -1560,18 +1629,7 @@
   }
 
   function callApi(action, payload, cmd) {
-    var body = Object.assign({}, payload, {
-      action: action,
-      ns: (typeof NS_ !== 'undefined' ? NS_ : ''),
-      contextDate: (typeof CONTEXT_DATE_ !== 'undefined' ? CONTEXT_DATE_ : ''),
-      // F3Go30-833s.15: identifies which static-page build sent this request — GitHub Pages
-      // caching + home-screen PWA launches can leave a client on a stale build for days with
-      // no other way to tell from the server side. null (unbuilt src/ served directly) is
-      // sent through as-is; buildWebAppRequestLog_ treats any falsy value as 'legacy'.
-      clientVersion: STATIC_BUILD_VERSION_
-    });
     var url = WEBAPP_URL + '?cmd=' + (cmd || CMD_);
-    var bodyJson = JSON.stringify(body);
     var mayRetry = RETRYABLE_ACTIONS_.indexOf(action) !== -1;
     var timeoutMs = mayRetry ? REQUEST_TIMEOUT_MS_ : WRITE_TIMEOUT_MS_;
 
@@ -1581,19 +1639,58 @@
       // never gets a Response at all). Stashed here so both the error paths below and the success
       // sample can attach it without re-deriving it or holding the Response itself past its use.
       var echoKeyInfo_ = null;
+      var body = Object.assign({}, payload, {
+        action: action,
+        ns: (typeof NS_ !== 'undefined' ? NS_ : ''),
+        contextDate: (typeof CONTEXT_DATE_ !== 'undefined' ? CONTEXT_DATE_ : ''),
+        // F3Go30-833s.15: identifies which static-page build sent this request — GitHub Pages
+        // caching + home-screen PWA launches can leave a client on a stale build for days with
+        // no other way to tell from the server side. null (unbuilt src/ served directly) is
+        // sent through as-is; buildWebAppRequestLog_ treats any falsy value as 'legacy'.
+        clientVersion: STATIC_BUILD_VERSION_
+      });
+      // F3Go30-ga01: every request (except the standalone telemetry upload) carries a client-minted
+      // id, logged on the server's doPost row and stamped on any error record for this request, and
+      // a few queued telemetry records piggyback, dequeued only when the response acks them. Built
+      // here, at send time, so a coalesced check-in picks up records queued while it waited.
+      var clientRequestId = null;
+      var carried = [];
+      if (action !== 'clientTelemetry') {
+        // A caller may mint the id itself to join its own telemetry to this request (pax-detail).
+        clientRequestId = (payload && typeof payload.clientRequestId === 'string' && payload.clientRequestId) || makeClientTelemetryId_();
+        body.clientRequestId = clientRequestId;
+        carried = selectPiggybackTelemetry_();
+        if (carried.length) body.telemetry = { records: carried };
+      }
+      var bodyJson = JSON.stringify(body);
+      var seq = ++inFlightSeq_;
+      var attempt = 0;
       pendingRequestCount_++;
-      updateSyncingIndicator_();
-      return fetchAttempt_(url, bodyJson, timeoutMs).catch(function(err) {
-        // Exactly one retry, and only for a read that died below HTTP. A server that ANSWERED —
-        // any status, any json.ok:false — is not re-asked: it has already made its decision, and
-        // repeating the call would only double the load while returning the same answer.
-        if (!mayRetry || !err || !err.isTransport) throw err;
-        return fetchAttempt_(url, bodyJson, timeoutMs);
-      }).then(function(res) {
+      // Up to MAX_READ_ATTEMPTS_ for a read whose response was lost (below HTTP, or a non-JSON
+      // Google page — F3Go30-5c2a.9); a write gets exactly one. A server that ANSWERED — any
+      // status, any json.ok:false — is not re-asked: it has already made its decision, and
+      // repeating the call would only multiply the load while returning the same answer.
+      function attemptOnce_() {
+        attempt++;
+        inFlightAttempts_[seq] = attempt;
+        updateSyncingIndicator_();
+        return fetchParsedAttempt_(url, bodyJson, timeoutMs).catch(function(err) {
+          if (err && err.isTransport) {
+            if (clientRequestId && !err.clientRequestId) err.clientRequestId = clientRequestId;
+            if (action !== 'clientTelemetry') captureLostAttempt_(action, err, attempt);
+            err.ctx = Object.assign({}, err.ctx, { attempts: attempt });
+          }
+          if (!mayRetry || !err || !err.isTransport || attempt >= MAX_READ_ATTEMPTS_) throw err;
+          return attemptOnce_();
+        });
+      }
+      return attemptOnce_().then(function(parsed) {
+        var res = parsed.res;
         echoKeyInfo_ = extractEchoKeyInfo_(res);
         if (!res.ok) throw Object.assign(new Error('Server returned HTTP ' + res.status), echoKeyInfo_);
-        return res.json();
+        return parsed.json;
       }).then(function(json) {
+        settlePiggybackTelemetry_(carried, json); // ok:false still acks
         if (!json.ok) throw Object.assign(new Error(json.error || 'Server reported an error with no detail'), echoKeyInfo_);
         return json;
       }).then(function(json) {
@@ -1612,8 +1709,13 @@
           captureClientTelemetry_('echoKey', action, echoKeyInfo_);
         }
         return json;
+      }).catch(function(err) {
+        if (err && typeof err === 'object' && clientRequestId && !err.clientRequestId) err.clientRequestId = clientRequestId;
+        throw err;
       }).finally(function() {
+        releasePiggybackTelemetry_(carried);
         pendingRequestCount_--;
+        delete inFlightAttempts_[seq];
         updateSyncingIndicator_();
       });
     }
@@ -1636,6 +1738,13 @@
   var CLIENT_TELEMETRY_QUEUE_MAX_ = 25;
   var CLIENT_TELEMETRY_QUEUE_MAX_AGE_MS_ = 1000 * 60 * 60 * 24 * 7; // 7 days
   var CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_ = 10;
+  // F3Go30-ga01: per-request piggyback budget — small enough that it never meaningfully slows the
+  // request it rides on.
+  var CLIENT_TELEMETRY_PIGGYBACK_MAX_ = 5;
+  var CLIENT_TELEMETRY_PIGGYBACK_MAX_BYTES_ = 2048;
+  var CLIENT_TELEMETRY_STACK_MAX_CHARS_ = 1200; // keeps one error record inside the piggyback budget
+  // Ids currently riding an in-flight request, so two concurrent requests don't both carry them.
+  var clientTelemetryInFlightIds_ = {};
 
   // F3Go30-f1cr / F3Go30-5c2a.1 AC4: last echo-key hash captured by the success-path sampler
   // below, so a record is only queued on a CHANGE (reuse vs. fresh) rather than on every request.
@@ -1677,7 +1786,7 @@
    * (errorText/stack/isTransport for an error; attempt/elapsedMs/outcome for a poll tick;
    * view/metric/monthKey for a Scorecard navigation).
    * @param {string} kind - 'error' | 'reconnectPoll' | 'echoKey' | 'dashboardRender' |
-   *   'scorecardView'.
+   *   'scorecardView' | 'paxGoals' (F3Go30-ni6z: empty/failed pax-detail goals).
    * @param {string} action - The callApi action this record is about (or a source tag like
    *   'window.onerror'/'open'/'tab'/'metric'/'month' for a capture with no associated callApi
    *   action).
@@ -1709,7 +1818,9 @@
   function captureClientError_(action, err, extra) {
     captureClientTelemetry_('error', action, Object.assign({
       errorText: (err && err.message) ? err.message : String(err),
-      stack: (err && err.stack) ? String(err.stack) : '',
+      stack: (err && err.stack) ? String(err.stack).slice(0, CLIENT_TELEMETRY_STACK_MAX_CHARS_) : '',
+      // F3Go30-ga01: joins this record to the server's doPost row for the failed request.
+      clientRequestId: (err && err.clientRequestId) || '',
       isTransport: !!(err && err.isTransport),
       // F3Go30-5c2a.1 AC3: carried over from callApi's thrown error when a Response existed
       // (redirected/echoKeyHash) — absent (redirected false, echoKeyHash '') for a below-HTTP
@@ -1720,7 +1831,9 @@
       // null) for an err that predates AC1 (or never went through fetchAttempt_ at all, e.g. the
       // window.onerror/unhandledrejection handlers below), degrading safely rather than crashing.
       abortedAtTimeout: !!(err && err.abortedAtTimeout),
-      elapsedMs: (err && typeof err.elapsedMs === 'number') ? err.elapsedMs : null
+      elapsedMs: (err && typeof err.elapsedMs === 'number') ? err.elapsedMs : null,
+      // F3Go30-5c2a.9 AC5: lost-response mode/httpStatus/attempts, under ctx (u7nk field budget).
+      ctx: (err && err.ctx) || null
     }, extra || {}));
   }
 
@@ -1750,6 +1863,52 @@
     });
   }
 
+  /** F3Go30-ga01: picks the records the next request carries — kind=error first, then the rest,
+   * each newest-first, at most CLIENT_TELEMETRY_PIGGYBACK_MAX_ records and ~2KB serialized — and
+   * marks them in flight. A record too big for the budget is skipped (the hide-time beacon and the
+   * standalone flush still carry it). Never throws. */
+  function selectPiggybackTelemetry_() {
+    try {
+      var queue = loadClientTelemetryQueue_().filter(function(rec) { return rec && rec.id && !clientTelemetryInFlightIds_[rec.id]; });
+      var newestFirst = queue.slice().reverse();
+      var ordered = newestFirst.filter(function(rec) { return rec.kind === 'error'; })
+        .concat(newestFirst.filter(function(rec) { return rec.kind !== 'error'; }));
+      var picked = [];
+      var bytes = 2;
+      ordered.forEach(function(rec) {
+        if (picked.length >= CLIENT_TELEMETRY_PIGGYBACK_MAX_) return;
+        var size = JSON.stringify(rec).length + 1;
+        if (bytes + size > CLIENT_TELEMETRY_PIGGYBACK_MAX_BYTES_) return;
+        picked.push(rec);
+        bytes += size;
+      });
+      picked.forEach(function(rec) { clientTelemetryInFlightIds_[rec.id] = true; });
+      return picked;
+    } catch (e) { return []; }
+  }
+
+  function releasePiggybackTelemetry_(carried) {
+    (carried || []).forEach(function(rec) { delete clientTelemetryInFlightIds_[rec.id]; });
+  }
+
+  function removeClientTelemetryIds_(ids) {
+    if (!ids || !ids.length) return;
+    saveClientTelemetryQueue_(loadClientTelemetryQueue_().filter(function(rec) { return !rec || ids.indexOf(rec.id) === -1; }));
+  }
+
+  /** F3Go30-ga01: a response that acks (telemetryAck) dequeues exactly those ids. A response with
+   * no telemetryAck to a request that carried records is an old server that ignores the field —
+   * fall back to the standalone upload so a new client still drains its queue. */
+  function settlePiggybackTelemetry_(carried, json) {
+    if (!carried || !carried.length) return;
+    if (json && Array.isArray(json.telemetryAck)) {
+      removeClientTelemetryIds_(json.telemetryAck);
+    } else {
+      releasePiggybackTelemetry_(carried);
+      flushClientTelemetryQueue_();
+    }
+  }
+
   var clientTelemetryFlushInFlight_ = false;
 
   /** Uploads queued telemetry records once connectivity is available. Fire-and-forget: never
@@ -1765,9 +1924,7 @@
     var batch = queue.slice(0, CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_);
     callApi('clientTelemetry', { records: batch })
       .then(function() {
-        var sentIds = batch.map(function(rec) { return rec.id; });
-        var remaining = loadClientTelemetryQueue_().filter(function(rec) { return sentIds.indexOf(rec.id) === -1; });
-        saveClientTelemetryQueue_(remaining);
+        removeClientTelemetryIds_(batch.map(function(rec) { return rec.id; }));
       })
       .catch(function() { /* stays queued, retried on the next successful callApi */ })
       .finally(function() { clientTelemetryFlushInFlight_ = false; });
@@ -1794,7 +1951,9 @@
       return;
     }
     try {
-      var batch = queue.slice(0, CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_);
+      // F3Go30-ga01: newest-first. Beacons are never acked, so sending the OLDEST slice re-sent the
+      // same stale records on every hide while new ones waited behind them.
+      var batch = queue.slice(-CLIENT_TELEMETRY_UPLOAD_BATCH_MAX_).reverse();
       var body = Object.assign({ records: batch }, {
         action: 'clientTelemetry',
         ns: (typeof NS_ !== 'undefined' ? NS_ : ''),
@@ -1897,6 +2056,49 @@
       }
       scheduleNextReconnectPoll_();
     });
+  }
+
+  // F3Go30-5c2a.7: a transport failure on a WRITE is not evidence the write failed (ADR-022: doPost
+  // runs to completion, sheet write included, before the redirect hop the response is lost on).
+  // confirmWrite_ asks the server what it holds via a read-back probe, itself a bounded poll — a
+  // lost probe is never read as "not landed" (the 2026-09-14 Little John case: every response lost
+  // while the server was healthy).
+  var WRITE_CONFIRM_INTERVAL_MS_ = 4000;
+  var WRITE_CONFIRM_MAX_ATTEMPTS_ = 3;
+  var WRITE_CONFIRM_DEADLINE_MS_ = 60000;
+  var writeConfirmActive_ = 0; // confirmations in flight — drives the notice (setWriteConfirmNotice_)
+
+  /** desc = { action, probe: () => Promise<json>, landed: json => boolean }.
+   * Resolves { outcome: 'landed' | 'missing' | 'unknown', attempts, elapsedMs }. Never rejects,
+   * never captures telemetry (the call site owns that). Only an ANSWER is terminal: a probe that
+   * resolves is 'landed'/'missing'; one lost below HTTP (isTransport) is retried after the
+   * interval, up to the attempt cap or the deadline, then 'unknown'; any other rejection is
+   * 'unknown' at once. */
+  function confirmWrite_(desc) {
+    var startedAt = Date.now();
+    var attempts = 0;
+    function result_(outcome) { return { outcome: outcome, attempts: attempts, elapsedMs: Date.now() - startedAt }; }
+    // The deadline is judged only BEFORE starting a probe (and before waiting the interval): callApi
+    // gives a read up to MAX_READ_ATTEMPTS_ x REQUEST_TIMEOUT_MS_, so one probe can itself outlast
+    // the deadline. A probe already in flight when it passes is allowed to finish and its answer is
+    // honoured — there is deliberately no timeout race around the probe.
+    function mayProbeAgain_() {
+      return attempts < WRITE_CONFIRM_MAX_ATTEMPTS_ && Date.now() - startedAt < WRITE_CONFIRM_DEADLINE_MS_;
+    }
+    function probeOnce_() {
+      attempts++;
+      return Promise.resolve(desc.probe()).then(function(json) {
+        return result_(desc.landed(json) ? 'landed' : 'missing');
+      }, function(err) {
+        if (!(err && err.isTransport)) return result_('unknown');
+        if (!mayProbeAgain_()) return result_('unknown');
+        return new Promise(function(resolve) { setTimeout(resolve, WRITE_CONFIRM_INTERVAL_MS_); }).then(function() {
+          return mayProbeAgain_() ? probeOnce_() : result_('unknown');
+        });
+      });
+    }
+    // A synchronous throw from probe()/landed() must not escape either.
+    return new Promise(function(resolve) { resolve(probeOnce_()); }).catch(function() { return result_('unknown'); });
   }
 
   function hideApiError_() {
@@ -2316,7 +2518,7 @@
     $('nmcDoneText').textContent = 'Okay — check back for ' + state.nmcNextMonthLabel + '. See you then!';
   });
 
-  function showApiError_(action, err) {
+  function showApiError_(action, err, extra) {
     // F3Go30-313u AC5: a request the browser killed because this document is being torn down is
     // not a failure to report — the banner would flash for an instant on the way out and mean
     // nothing. Bail before touching the DOM.
@@ -2324,7 +2526,7 @@
 
     // F3Go30-xyri: every banner-worthy failure is a client-observed error worth capturing for
     // frequency/root-cause analysis, uploaded opportunistically once connectivity returns.
-    captureClientError_(action, err);
+    captureClientError_(action, err, extra);
 
     var detail =
       'Time: ' + new Date().toISOString() + '\n' +
@@ -2986,39 +3188,111 @@
     });
   }
 
-  function submitCheckin_(btn, day, value) {
+  /**
+   * F3Go30-5c2a.6: the ONE check-in write sequence, shared by the Today/Yesterday buttons
+   * (submitCheckin_) and the calendar's selection panel (submitSelectionCheckin_). Owns:
+   * hideApiError_ -> loading state -> optimistic write-through -> callApi('checkin') ->
+   * ackCheckinWrite_ + onLanded on success / revert + showApiError_ on failure -> loading state off.
+   * opts = { btn, dayArg, dateIso, value, onLanded }. dayArg is the payload's `day` field
+   * ('today' / 'yesterday' for the buttons, the ISO date for the calendar); dateIso is the resolved
+   * date used for every local-state key. Only the render work (onLanded) differs per call site.
+   */
+  function submitCheckinWrite_(opts) {
+    var btn = opts.btn, dateIso = opts.dateIso, value = opts.value;
     hideApiError_();
     setButtonLoading_(btn, true, 'Saving…');
-    var dateIso = day === 'today' ? state.todayIso : state.yesterdayIso;
     var status = valueToStatus_(value);
     applyOwnDayWrite_(dateIso, value);
     state.locallyWrittenIso[dateIso] = status;
-    callApi('checkin', { f3Name: state.f3Name, email: state.email, day: day, value: value, resolvedContext: state.resolvedContext })
+    callApi('checkin', { f3Name: state.f3Name, email: state.email, day: opts.dayArg, value: value, resolvedContext: state.resolvedContext })
       .then(function() {
-        state.writeGenByIso_[dateIso] = requestGen_; // F3Go30-os03 D5 — this write's ack position
-        renderCheckinStatus_(day, status);
-        state.lastEditedDayIso = dateIso;
-        if (day === 'today') state.todayStatus = status; else state.yesterdayStatus = status;
-        // F3Go30-os03 D3/D4: state.board was already patched (applyOwnDayWrite_, above, before the
-        // round trip) regardless of which month the calendar is parked on — this just refreshes
-        // the CURRENTLY PAINTED grid from it (a fresh derive, never a mutated alias; see
-        // boardMonthGrid_). Replaces the former updateMonthGridEntry_, which mutated state.monthGrid
-        // directly and silently no-opped whenever the calendar was parked on a different month
-        // than dateIso's (the P1 cross-month split-brain this issue fixes).
-        state.monthGrid = boardMonthGrid_(state.calMonthKey);
-        if (state.advancedOpen) {
-          updateCalCellStatus_(dateIso, status);
-          if (state.selectedDateIso === dateIso) renderSelectionPanel_(dateIso);
-        }
+        ackCheckinWrite_(dateIso, status, opts.onLanded);
+      }, function(err) {
+        // F3Go30-5c2a.7: a response lost below HTTP does not mean the write did not land. Keep the
+        // optimistic value and confirm by read-back — deliberately NOT returned, so the button's
+        // finally below still runs when the POST settles. Anything the server answered falls through
+        // to the failure path unchanged.
+        if (err && err.isTransport) { confirmCheckinWrite_(dateIso, status, err, opts.onLanded); return; }
+        throw err;
       })
-      .catch(function(err) {
-        revertOwnDayWrite_(dateIso);
+      .catch(function(err) { revertOwnDayWrite_(dateIso);
         delete state.locallyWrittenIso[dateIso];
         showApiError_('checkin', err);
       })
       .finally(function() {
         setButtonLoading_(btn, false);
       });
+  }
+
+  /** The read-back probe for a check-in: is the server's month grid holding `expectedStatus` on
+   * `dateIso`? Live callApi, never loadCalMonth_ (which short-circuits on the state.board cache). */
+  function checkinProbe_(dateIso, expectedStatus) {
+    return {
+      action: 'checkin',
+      probe: function() {
+        return callApi('monthGrid', { f3Name: state.f3Name, email: state.email,
+          monthKey: monthKeyOf_(parseIsoDate_(dateIso)), resolvedContext: state.resolvedContext });
+      },
+      landed: function(res) {
+        return !!(res && res.registered) && (res.monthGrid || []).some(function(e) {
+          return e.dateIso === dateIso && e.status === expectedStatus;
+        });
+      }
+    };
+  }
+
+  /** Confirms a transport-failed check-in (5c2a.7). Exactly one kind:'error' record per failure:
+   * 'landed' captures it here (showApiError_ never runs); 'missing'/'unknown' hand the extras to
+   * showApiError_, which captures it. `err` is the ORIGINAL error so banner copy is unchanged. */
+  function confirmCheckinWrite_(dateIso, status, err, onLanded) {
+    // Superseded: a newer tap on this day owns it and runs its own confirmation.
+    if (state.locallyWrittenIso[dateIso] !== status) return;
+    setWriteConfirmNotice_(true);
+    confirmWrite_(checkinProbe_(dateIso, status)).then(function(r) {
+      setWriteConfirmNotice_(false);
+      if (state.locallyWrittenIso[dateIso] !== status) return;
+      var extra = { confirmOutcome: r.outcome, confirmAttempts: r.attempts, confirmElapsedMs: r.elapsedMs };
+      if (r.outcome === 'landed') {
+        captureClientError_('checkin', err, extra);
+        ackCheckinWrite_(dateIso, status, onLanded);
+      } else {
+        revertOwnDayWrite_(dateIso);
+        delete state.locallyWrittenIso[dateIso];
+        showApiError_('checkin', err, extra);
+      }
+    }).catch(function() { setWriteConfirmNotice_(false); });
+  }
+
+  // Calm inline "confirming" notice — a separate element from apiErrorBanner, counted so one
+  // confirmation finishing never hides the notice for another still running.
+  function setWriteConfirmNotice_(on) {
+    writeConfirmActive_ = Math.max(0, writeConfirmActive_ + (on ? 1 : -1));
+    $('writeConfirmNotice').classList.toggle('hidden', writeConfirmActive_ === 0);
+  }
+
+  // The shared success bookkeeping for a landed check-in write, then the call site's own render.
+  function ackCheckinWrite_(dateIso, status, onLanded) {
+    state.writeGenByIso_[dateIso] = requestGen_; // F3Go30-os03 D5 — this write's ack position
+    // F3Go30-os03 D3/D4: state.board was already patched (applyOwnDayWrite_, before the round trip)
+    // regardless of which month the calendar is parked on — this just refreshes the CURRENTLY PAINTED
+    // grid from it (a fresh derive, never a mutated alias; see boardMonthGrid_). Replaces the former
+    // updateMonthGridEntry_, which mutated state.monthGrid directly and silently no-opped whenever the
+    // calendar was parked on a different month than dateIso's (the P1 cross-month split-brain).
+    state.monthGrid = boardMonthGrid_(state.calMonthKey);
+    state.lastEditedDayIso = dateIso;
+    onLanded(status);
+  }
+
+  function submitCheckin_(btn, day, value) {
+    var dateIso = day === 'today' ? state.todayIso : state.yesterdayIso;
+    submitCheckinWrite_({ btn: btn, dayArg: day, dateIso: dateIso, value: value, onLanded: function(status) {
+      renderCheckinStatus_(day, status);
+      if (day === 'today') state.todayStatus = status; else state.yesterdayStatus = status;
+      if (state.advancedOpen) {
+        updateCalCellStatus_(dateIso, status);
+        if (state.selectedDateIso === dateIso) renderSelectionPanel_(dateIso);
+      }
+    } });
   }
 
   $('todayYesBtn').addEventListener('click', function() { submitCheckin_(this, 'today', 1); });
@@ -3365,32 +3639,18 @@
   }
 
   function submitSelectionCheckin_(btn, value) {
-    hideApiError_();
-    setButtonLoading_(btn, true, 'Saving…');
     var dateIso = state.selectedDateIso;
-    var status = valueToStatus_(value);
-    applyOwnDayWrite_(dateIso, value);
-    state.locallyWrittenIso[dateIso] = status;
-    callApi('checkin', { f3Name: state.f3Name, email: state.email, day: dateIso, value: value, resolvedContext: state.resolvedContext })
-      .then(function() {
-        state.writeGenByIso_[dateIso] = requestGen_; // F3Go30-os03 D5 — this write's ack position
-        // F3Go30-os03 D3/D4: refresh the currently-painted grid from state.board (see submitCheckin_'s
-        // matching comment).
-        state.monthGrid = boardMonthGrid_(state.calMonthKey);
-        updateCalCellStatus_(dateIso, status);
-        // F3Go30-jsrf: dateIso is NOT guaranteed to still be state.selectedDateIso here — the PAX
-        // may have already clicked a different day while this write's round trip was in flight
-        // (renderSelectionPanel_ unconditionally reassigns state.selectedDateIso to whatever it's
-        // given). Applying a superseded click's panel/selection here would clobber the PAX's actual
-        // current selection out from under them — the exact desync symptom reported live. Same
-        // guard submitCheckin_ already uses for its matching call, just missing here.
-        if (state.selectedDateIso === dateIso) renderSelectionPanel_(dateIso);
-        state.lastEditedDayIso = dateIso;
-        if (dateIso === state.todayIso) { state.todayStatus = status; renderCheckinStatus_('today', status); }
-        else if (dateIso === state.yesterdayIso) { state.yesterdayStatus = status; renderCheckinStatus_('yesterday', status); }
-      })
-      .catch(function(err) { revertOwnDayWrite_(dateIso); delete state.locallyWrittenIso[dateIso]; showApiError_('checkin', err); })
-      .finally(function() { setButtonLoading_(btn, false); });
+    submitCheckinWrite_({ btn: btn, dayArg: dateIso, dateIso: dateIso, value: value, onLanded: function(status) {
+      updateCalCellStatus_(dateIso, status);
+      // F3Go30-jsrf: dateIso is NOT guaranteed to still be state.selectedDateIso here — the PAX
+      // may have already clicked a different day while this write's round trip was in flight
+      // (renderSelectionPanel_ unconditionally reassigns state.selectedDateIso to whatever it's
+      // given). Applying a superseded click's panel/selection here would clobber the PAX's actual
+      // current selection out from under them — the exact desync symptom reported live.
+      if (state.selectedDateIso === dateIso) renderSelectionPanel_(dateIso);
+      if (dateIso === state.todayIso) { state.todayStatus = status; renderCheckinStatus_('today', status); }
+      else if (dateIso === state.yesterdayIso) { state.yesterdayStatus = status; renderCheckinStatus_('yesterday', status); }
+    } });
   }
 
   $('selYesBtn').addEventListener('click', function() { submitSelectionCheckin_(this, 1); });
@@ -4291,9 +4551,20 @@
 
     var cachedGoals = state.paxGoalsCache[cacheKey];
     renderPaxDetailGoals_(cachedGoals !== undefined ? cachedGoals : undefined);
-    callApi('paxGoals', { f3Name: view.name, dateISO: dateISO, resolvedContext: state.resolvedContext })
-      .then(function(res) { return (res && res.ok) ? res.goals : null; })
-      .catch(function() { return null; })
+    // F3Go30-ni6z: an empty goal set or a failed lookup is captured as telemetry, joined to the
+    // server's checkinWebapp.paxDetail row by this request's clientRequestId (F3Go30-ga01).
+    var goalsRequestId = makeClientTelemetryId_();
+    callApi('paxGoals', { f3Name: view.name, dateISO: dateISO, resolvedContext: state.resolvedContext, clientRequestId: goalsRequestId })
+      .then(function(res) {
+        var goals = (res && res.ok) ? res.goals : null;
+        var hasContent = goals && ['who', 'what', 'how'].some(function(k) { return String(goals[k] || '').trim() !== ''; });
+        if (goals && !hasContent) captureClientTelemetry_('paxGoals', 'paxGoals', { outcome: 'goals_empty', clientRequestId: goalsRequestId });
+        return goals;
+      })
+      .catch(function(err) {
+        captureClientTelemetry_('paxGoals', 'paxGoals', { outcome: 'error', errorText: (err && err.message) || String(err), clientRequestId: goalsRequestId });
+        return null;
+      })
       .then(function(goals) {
         state.paxGoalsCache[cacheKey] = goals;
         if (stillShowing()) renderPaxDetailGoals_(goals);
