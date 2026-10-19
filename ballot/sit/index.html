@@ -567,7 +567,7 @@
 <script>
   // Stamped by tools/build-static-pages.js per env — see that file's header. Left null here so
   // this source file also runs unbuilt (local/manual testing with ?webapp= — see resolveWebappUrl_).
-  var STATIC_BUILD_VERSION_ = "0.1.6.10";
+  var STATIC_BUILD_VERSION_ = "0.1.6.11";
   var STATIC_WEBAPP_URL_ = "https://script.google.com/macros/s/AKfycbwRGVywtwcP9zAS2HvOJDlgBOa7t_H6l98yKBhR4fWzacDRvAg62fd5HFdhQ97C2Ef7uA/exec";
   var STATIC_DEV_CONTACT_ = "stuart.donaldson@gmail.com";
 
@@ -1203,8 +1203,9 @@
       var html = '<h3>' + escapeHtml_(label) + '</h3>';
       if (result.winner) {
         html += '<p>' + escapeHtml_(label) + ' winner: <strong>' + escapeHtml_(result.winner) + '</strong></p>';
-      } else if (result.tie && result.tie.length) {
-        html += '<p>No ' + escapeHtml_(label) + ' winner (tie between: <strong>' + escapeHtml_(result.tie.join(', ')) + '</strong>).</p>';
+      } else if ((result.tie && result.tie.length) || (result.tiedForMinScore && result.tiedForMinScore.length)) {
+        var tied = (result.tie && result.tie.length) ? result.tie : result.tiedForMinScore;
+        html += '<p>No ' + escapeHtml_(label) + ' winner (tie between: <strong>' + escapeHtml_(tied.join(', ')) + '</strong>).</p>';
       } else {
         html += '<p>No ' + escapeHtml_(label) + ' winner (cycle detected).</p>';
       }
